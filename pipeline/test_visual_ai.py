@@ -108,7 +108,7 @@ class VisualAI(unittest.TestCase):
                            'Cambio de escena en el recorrido.', 'Giro junto al río azul'])
         result = insights.public_record('clip_a', self.vault)
         labels = [h.get('label') for h in result['highlights']]
-        self.assertEqual(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul', None, None], labels)
+        self.assertEqual(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul', 'Cámara muestra río', 'Giro junto al río azul'], labels)
         self.assertTrue(all(len(label) <= 40 for label in labels if label))
 
     def test_peak_width_controls_duration(self):
@@ -136,18 +136,18 @@ class VisualAI(unittest.TestCase):
         self.assertEqual(before, (self.vault / 'ai/clip_a.json').read_bytes())
         self.vision_mock.assert_not_called(); self.embed_mock.assert_not_called()
 
-    def test_peak_label_omits_static_generic_or_out_of_time_text(self):
+    def test_peak_label_describes_subject_without_inventing_motion(self):
         data = self.peak_fixture(['Fachada de ladrillo junto al río', 'Vuelo sobre el paisaje',
                                   'Paso sobre la fachada de ladrillo junto al parque', 'Giro junto al río azul'])
         # A reason after the peak cannot label an earlier frame.
         data['insight']['highlight_segments'][-1]['start'] = 71
         self.write('ai/clip_a.json', data)
         labels = [h.get('label') for h in insights.public_record('clip_a', self.vault)['highlights']]
-        self.assertEqual([None, None, 'Paso sobre la fachada de ladrillo', None], labels)
+        self.assertEqual(['Cámara muestra fachada de ladrillo', 'Cámara muestra río', 'Paso sobre la fachada de ladrillo', 'Cámara muestra río'], labels)
 
     def test_trimming_does_not_leave_an_action_without_its_subject(self):
         self.peak_fixture(['Movimiento de transición que revela nuevos edificios y zonas verdes.'])
-        self.assertTrue(all('label' not in h for h in insights.public_record('clip_a', self.vault)['highlights']))
+        self.assertTrue(all(h.get('label') == 'Cámara muestra río' for h in insights.public_record('clip_a', self.vault)['highlights']))
 
     def test_wide_peak_and_clip_edges_bound_duration(self):
         from PIL import Image
@@ -287,6 +287,27 @@ class VisualAI(unittest.TestCase):
         again = backfill_frame_quality.backfill(1, backup, self.vault)
         self.assertEqual((0, 0, 0), tuple(again[k] for k in
                                         ('clips_written', 'properties_written', 'summaries_written')))
+
+    def test_highlight_only_backfill_preserves_owner_data_and_provider_input(self):
+        import backfill_frame_quality
+        original = self.peak_fixture(['Cambio de escena en el recorrido.'] * 4)
+        original['owner_highlights'] = [{'t': 5, 'reason': 'Mi marca', 'type': 'manual'}]
+        self.write('ai/clip_a.json', original)
+        (self.vault / 'properties').mkdir()
+        self.write('properties/demo.json', {'clip': 'clip_a', 'gallery': []})
+        prop = (self.vault / 'properties/demo.json').read_bytes()
+        backup = self.vault / 'backup'
+        report = backfill_frame_quality.backfill(1, backup, self.vault, highlights_only=True)
+        updated = insights.read(self.vault / 'ai/clip_a.json')
+        self.assertEqual(1, report['clips_written'])
+        self.assertEqual(original['insight'], updated['insight'])
+        self.assertEqual(original['owner_highlights'], updated['owner_highlights'])
+        self.assertEqual(prop, (self.vault / 'properties/demo.json').read_bytes())
+        self.assertEqual(0, report['summaries_written'])
+        self.assertTrue(all(h['label'] and h['label'] == h['reason'] for h in updated['highlights']))
+        self.assertEqual(original, insights.read(backup / 'ai/clip_a.json'))
+        again = backfill_frame_quality.backfill(1, backup, self.vault, highlights_only=True)
+        self.assertEqual(0, again['clips_written'])
 
     def test_mundo_uses_filtered_source_frames_when_poster_is_missing(self):
         from ai.frame_api import project

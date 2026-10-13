@@ -1,10 +1,10 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=438';
-import { fmt } from './ui/format.js?v=438';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=438';
-import { skinPlayer } from './ui/player.js?v=438';
-import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=438';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=438';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=438';
+import { thumbnailURL } from './ui/thumbnail.js?v=442';
+import { fmt } from './ui/format.js?v=442';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=442';
+import { skinPlayer } from './ui/player.js?v=442';
+import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=442';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=442';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=442';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page');
@@ -58,7 +58,7 @@ main.innerHTML = skeleton(2);
   const manualHighlights = [...highlights, ...(aiData?.owner_highlights || [])].filter((h, i, rows) => h.type === 'manual' && rows.findIndex(row => row.type === 'manual' && row.t === h.t) === i);
   const highlightRows = rows => rows.map(h => `<div class="hl-item">
     <button class="tc hit44 fl-moment-jump" data-t="${+h.t || 0}" aria-label="Ir a ${fmt.clock(+h.t || 0)}">${h.frame ? `<img src="${esc(h.frame.frame_url)}" alt="">` : ''}<span>${fmt.clock(+h.t || 0)}</span></button>
-    ${h.reason || h.type === 'manual' ? `<p>${esc(h.reason || '')}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>` : ''}
+    ${h.label || h.reason || h.type === 'manual' ? `<p>${esc(h.label || h.reason || '')}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>` : ''}
     <button class="ui-button ui-button--quiet fl-moment-menu" data-edit-start="${h.start ?? Math.max(0, (+h.t || 0) - 3)}" data-edit-end="${h.end ?? Math.min(meta.duration_s, (+h.t || 0) + 4)}" aria-label="Opciones del momento">${icon('more')}</button>
   </div>`).join('');
 
@@ -218,10 +218,25 @@ main.innerHTML = skeleton(2);
     const player = skinPlayer(video, { label: 'Recorrido del vuelo' });
     const qualityControl = document.createElement('button'); qualityControl.className = 'ui-button ui-button--quiet fl-quality';
     qualityControl.id = 'fl-quality'; qualityControl.type = 'button'; qualityControl.setAttribute('aria-label', 'Calidad de video');
-    player.element.querySelector('.ui-player-controls').append(qualityControl);
-    qualityControl.addEventListener('click', () => openMenu(qualityControl,
-      [{ id: 'auto', label: 'Automática' }, ...Object.entries(SRC).filter(([, url]) => url).map(([id]) => ({ id, label: { '720': '720p', hd: '1080p', '4k': '4K' }[id] }))]
-        .map(item => ({ ...item, hint: item.id === quality ? 'Actual' : '' })), { onSelect: setQuality }));
+    const controls = player.element.querySelector('.ui-player-controls');
+    const secondary = [...controls.querySelectorAll('button')].slice(1);
+    secondary.forEach(button => button.classList.add('fl-player-secondary'));
+    controls.append(qualityControl);
+    const more = document.createElement('button');
+    more.type = 'button'; more.className = 'ui-button ui-button--quiet fl-player-more';
+    more.setAttribute('aria-label', 'Opciones del video'); more.innerHTML = icon('more');
+    controls.append(more);
+    more.addEventListener('click', () => openMenu(more, [
+      ...secondary.filter(button => !button.hidden).map((button, i) => ({id: `control-${i}`, label: button.getAttribute('aria-label')})),
+      {id: 'quality', label: 'Calidad de video', hint: qualityControl.textContent},
+    ], {onSelect: id => {
+      if (id === 'quality') openMenu(more, qualityItems(), {onSelect: setQuality});
+      else secondary[Number(id.split('-')[1])]?.click();
+    }}));
+    const qualityItems = () => [{ id: 'auto', label: 'Automática' },
+      ...Object.entries(SRC).filter(([, url]) => url).map(([id]) => ({id, label: {'720': '720p', hd: '1080p', '4k': '4K'}[id]}))]
+      .map(item => ({...item, hint: item.id === quality ? 'Actual' : ''}));
+    qualityControl.addEventListener('click', () => openMenu(qualityControl, qualityItems(), {onSelect: setQuality}));
     addEventListener('pagehide', () => player.destroy(), { once: true });
   } else {
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
@@ -619,8 +634,7 @@ main.innerHTML = skeleton(2);
         for (const h of moments) {
           const key = `ab.moment.dismissed.${cid}.${h.start}`;
           if (localStorage.getItem(key)) continue;
-          const reason = h.reason && !/^Cambio de escena/i.test(h.reason)
-            && moments.filter(row => row.reason === h.reason).length === 1 ? h.reason : '';
+          const reason = h.label || h.reason || '';
           const target = h.evidence?.peak_time_s ?? h.start;
           const frame = frames.filter(frame => frame.frame_time_s >= h.start && frame.frame_time_s < h.end)
             .sort((a, b) => Math.abs(a.frame_time_s - target) - Math.abs(b.frame_time_s - target))[0];

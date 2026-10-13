@@ -12,12 +12,12 @@ try:
 except ImportError:
     from insight_schema import DANGLING, PRAISE
 
-VERSION = 2
+VERSION = 3
 MAX_FRAMES = 600
 
 
-def peak_label(insight, time_s):
-    """Use only text observed in the segment that contains this peak."""
+def peak_label(insight, time_s, sampled_times=()):
+    """Keep supported actions, or describe the nearest analysed subject without motion."""
     segments = sorted((s for s in insight['highlight_segments']
                        if s['start'] <= time_s < s['end']), key=lambda s: -s['score'])
     for segment in segments:
@@ -45,7 +45,25 @@ def peak_label(insight, time_s):
                 r'pasa|gira|asciende|desciende|cruza|avanza|sobrevuela|revela|'
                 r'aparece|emerge|bordea|rodea|recorre|sigue|entra|sale|acerca|aleja)\b', label, re.I):
             return label[:1].upper() + label[1:]
-    return ''
+    # Stored v2 records have clip captions and timed segment notes, not per-frame captions.
+    # Anchor the fallback to the nearest analysed keyframe, then its segment note.
+    anchor = min(sampled_times, key=lambda t: (abs(t - time_s), t), default=time_s)
+    nearest = min(insight.get('highlight_segments', []),
+                  key=lambda s: (max(s['start'] - anchor, anchor - s['end'], 0), s['start']),
+                  default={})
+    note = nearest.get('reason', '').casefold()
+    subjects = insight.get('subjects') or insight.get('tags') or [insight.get('caption_short', '')]
+    subjects = [' '.join(subject.split()).strip(' .;,:!?…') for subject in subjects if subject.strip()]
+    # Prefer the subject named in the local note. Never rotate nouns merely for variety.
+    subjects.sort(key=lambda subject: -sum(word.casefold().rstrip('s') in note
+                                          for word in subject.split() if len(word) > 3))
+    subject = subjects[0] if subjects else insight.get('scene_type', 'entorno')
+    label = 'Cámara muestra ' + subject[:1].lower() + subject[1:]
+    if len(label) > 40:
+        label = label[:41].rsplit(' ', 1)[0]
+    while DANGLING.search(label):
+        label = label.rsplit(' ', 1)[0]
+    return label
 
 
 def derive(data, vault):
@@ -65,11 +83,12 @@ def derive(data, vault):
             signature.append((str(path), stat.st_mtime_ns, stat.st_size))
         except OSError:
             continue
-    return json.loads(_derive(json.dumps(data['insight'], sort_keys=True), duration, tuple(signature)))
+    return json.loads(_derive(json.dumps(data['insight'], sort_keys=True), duration, tuple(signature),
+                              tuple(data.get('sampled_frame_times', []))))
 
 
 @lru_cache(maxsize=256)
-def _derive(insight_json, duration, signature):
+def _derive(insight_json, duration, signature, sampled_times):
     ins = json.loads(insight_json)
     rows, previous = [], None
     for path, _, _ in signature:
@@ -123,7 +142,7 @@ def _derive(insight_json, duration, signature):
         start = max(t - length + .5, min(t - .5, start))
         start = round(max(0, min(start, duration - length)), 3)
         segments.append({'start': start, 'end': round(start + length, 3), 'score': score,
-                         'reason': peak_label(ins, t),
+                         'reason': peak_label(ins, t, sampled_times),
                          'evidence': {'method': 'keyframe_difference', 'peak_time_s': t,
                                       'onset_s': onset, 'offset_s': offset,
                                       'previous_time_s': row['previous_time_s'],
@@ -132,11 +151,5 @@ def _derive(insight_json, duration, signature):
         if len(segments) == 4:
             break
     segments.sort(key=lambda s: s['start'])
-    seen = set()
-    for segment in segments:
-        key = segment['reason'].casefold()
-        if key in seen:
-            segment['reason'] = ''
-        seen.add(key)
     return json.dumps({'version': VERSION, 'segments': segments,
                        'frames_scored': rows}, allow_nan=False)

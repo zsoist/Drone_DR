@@ -1,4 +1,5 @@
-import { fmt } from './format.js?v=438';
+import { thumbnailURL } from './thumbnail.js?v=442';
+import { fmt } from './format.js?v=442';
 // One source per shell. Cache only completed queries for this page session.
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export function matchEvidence(row, query) {
@@ -21,9 +22,7 @@ export function matchEvidence(row, query) {
 async function fetchCover(clipId, signal) {
   const response = await fetch(`/api/clip/${encodeURIComponent(clipId)}/insight`, { signal });
   if (!response.ok) throw new Error('Clip cover unavailable');
-  const { cover } = await response.json();
-  return (cover?.selection === 'owner' || cover?.quality?.status === 'ok') && /^\/?data\/frames\/[\w-]+\/f_\d+\.jpg$/.test(cover.frame_url || '')
-    ? cover.frame_url : '';
+  return thumbnailURL({ ...await response.json(), clip_id: clipId });
 }
 async function fetchContext() {
   const read = async url => {
@@ -84,7 +83,7 @@ export function createClipSearchSource({ loadContext = fetchContext, loadCover =
       return {
         id: `clip-${row.clip_id}`, group: 'Clips', suggested: true, queryMatch: true,
         label: flight.title?.trim() || row.caption_short?.trim() || row.caption?.trim().slice(0, 100) || 'Clip de tu archivo',
-        hint: context.join(' · ') || 'Ver vuelo', matchText: matchEvidence(row, q), thumbnail: covers.get(row.clip_id) || '',
+        hint: context.join(' · ') || 'Ver vuelo', matchText: matchEvidence(row, q), thumbnail: covers.get(row.clip_id) || thumbnailURL(row),
         href: `flight.html?id=${encodeURIComponent(row.clip_id)}&t=${seconds}`,
       };
     }));

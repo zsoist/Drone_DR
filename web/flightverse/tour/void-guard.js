@@ -4,8 +4,8 @@
 // Resultado: bruma interior 0..1 (mezcla a color de niebla en materiales del mundo y cielo) y,
 // siempre, disolución por dither de lo que esté a < 1.4 m (world-look.js). Coste: una consulta
 // `closest` cada 2 frames.
-import { WORLD_LOOK, setNearLook } from '/flightverse/world-look.js?v=438';
-import { VOID, mistFromDistance, mistFromEnclosure } from '/flightverse/tour/void-math.js?v=438';
+import { WORLD_LOOK, setNearLook } from '/flightverse/world-look.js?v=442';
+import { VOID, mistFromDistance, mistFromEnclosure } from '/flightverse/tour/void-math.js?v=442';
 
 export { VOID, mistFromDistance };
 

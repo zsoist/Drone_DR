@@ -43,7 +43,6 @@ def thumbnail_url(cid, vault, records=None):
     records = records if records is not None else {}
     if cid not in records:
         records[cid] = insights.record(cid, vault)
-    data = records[cid]
     cover = next(insights.cover_candidates([cid], records, vault), None)
     if cover:
         return cover['frame_url']
@@ -52,17 +51,10 @@ def thumbnail_url(cid, vault, records=None):
                     if re.fullmatch(r'f_\d+\.jpg', p.name))
     if not frames:
         return normal
-    # Ingest takes the normal thumbnail at 25% of the clip. Clip-level text
-    # evidence cannot locate the sign; use a different sampled time when possible.
-    meta = insights.read(vault / 'manifest' / f'{cid}.json', {})
-    t = (meta.get('duration_s') or data.get('duration_s') or 0) * .25
-    original = min(frames, key=lambda p: abs((int(p.stem[2:]) - 1) * 2 - t))
-    privacy = {'text_or_sign', 'text', 'sign', 'phone'}
-    if privacy.intersection(cover_quality.evidence_reasons(data)):
-        alternate = next((p for p in frames if p != original), None)
-        if alternate:
-            return f'/data/frames/{cid}/{alternate.name}'
-    return normal if (vault / 'thumbs' / f'{cid}.jpg').is_file() else f'/data/frames/{cid}/{original.name}'
+    if (vault / 'thumbs' / f'{cid}.jpg').is_file():
+        return normal
+    return f'/data/frames/{cid}/{frames[0].name}'
+
 
 
 def project(payload, vault):
@@ -100,7 +92,9 @@ def project(payload, vault):
             # Mundo reads scene manifests directly, including those with no poster.
             if isinstance(value.get('assets'), dict) and insights.valid_id(value.get('clip_id')):
                 frame = media_frame(f"/data/thumbs/{value['clip_id']}.jpg", vault, records)
-                result['assets']['poster'] = frame['frame_url']
+                poster = value['assets'].get('poster') or ''
+                own_asset = re.fullmatch(rf'/?data/models/{re.escape(value["clip_id"])}/[\w-]+\.(?:webp|jpg|png)', poster)
+                result['assets']['poster'] = poster if own_asset else frame['frame_url']
                 result['assets']['poster_quality'] = frame['quality']
                 result['cover'] = frame if frame['quality']['eligible'] else None
             return result

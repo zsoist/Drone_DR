@@ -1,8 +1,8 @@
-import { fmt } from './ui/format.js?v=438';
-import { Suggested } from './ui/suggested.js?v=438';
-import { skinPlayer } from './ui/player.js?v=438';
-import { galleryFrames, propertyCover, propertyDescription } from './p.logic.js?v=438';
-import { createSheet } from './ui/sheet.js?v=438';
+import { fmt } from './ui/format.js?v=442';
+import { Suggested } from './ui/suggested.js?v=442';
+import { skinPlayer } from './ui/player.js?v=442';
+import { galleryFrames, propertyCover, propertyDescription } from './p.logic.js?v=442';
+import { createSheet } from './ui/sheet.js?v=442';
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root = document.getElementById('root');
 function empty(title, text, retry=false) {
@@ -31,10 +31,10 @@ async function load() {
     <div class="p-hero">${hero?`<img src="${hero}" alt="Vista aérea de ${esc(p.titulo || 'la propiedad')}" fetchpriority="high">`:'<div class="p-no-cover">La vista aérea aún no está disponible.</div>'}${video?'<button class="ui-button ui-button--secondary p-play" id="p-video">Ver recorrido</button>':''}</div>
     <div class="p-content"><div>${specs.length?`<dl class="p-specs">${specs.map(([v,l])=>`<div><dt>${l}</dt><dd><span class="ui-figure">${esc(Number.isFinite(Number(v)) ? fmt.number(v) : v)}</span></dd></div>`).join('')}</dl>`:''}
       <section class="p-description"><h2>Sobre la propiedad</h2><div id="p-description"></div></section>
-      ${frames.length?`<section class="p-gallery-section"><h2>Desde el aire</h2><div class="p-gallery">${frames.map((f,i)=>`<button class="p-frame" data-frame="${i}" aria-label="Ampliar vista aérea ${i+1}"><img src="${f}" loading="eager" decoding="async" alt="Vista aérea ${i+1}"></button>`).join('')}</div></section>`:'<section class="p-gallery-section"><h2>Desde el aire</h2><p>No hay imágenes revisadas disponibles para esta propiedad.</p></section>'}
+      ${frames.length?`<section class="p-gallery-section"><h2>Desde el aire</h2><div class="p-gallery">${frames.map((f,i)=>`<button class="p-frame" data-frame="${i}" aria-label="Ampliar vista aérea ${i+1}"><img src="${f}" loading="eager" decoding="async" alt="Vista aérea ${i+1}"></button>`).join('')}</div></section>`:''}
       ${coords?`<section class="p-location-section"><h2>Ubicación</h2><p>${esc(p.ubicacion || 'Ubicación de la propiedad')}</p><a class="ui-button ui-button--secondary" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.lat+','+p.lon)}" target="_blank" rel="noopener">Ver ubicación en el mapa ${icon('ext')}</a></section>`:''}
     </div><aside class="p-contact"><h2>Conoce la propiedad</h2><p>Consulta los detalles y acuerda una visita.</p>${wa?`<a class="ui-button ui-button--primary" href="https://wa.me/${wa}?text=${encodeURIComponent('Hola, me interesa '+(p.titulo || 'esta propiedad'))}">Consultar por WhatsApp</a>`:tel?`<a class="ui-button ui-button--primary" href="tel:${tel}">Llamar para consultar</a>`:'<p>Los datos de contacto aún no están disponibles.</p>'}${wa&&tel?`<a class="ui-button ui-button--quiet" href="tel:${tel}">Llamar</a>`:''}</aside></div>
-    <footer class="p-footer">Imágenes del archivo aéreo de AeroBrain.</footer>`;
+    ${frames.length ? '<footer class="p-footer">Imágenes del archivo aéreo de AeroBrain.</footer>' : ''}`;
   const description=document.getElementById('p-description');
   // Hide the old fact-only template. Keep owner descriptions intact.
   const generated=String(p.descripcion_source || '').startsWith('ai');

@@ -82,6 +82,7 @@
 .fl-danger-note { margin-top:var(--sp-3); }
 .w2-loading { display:grid; grid-template-columns:2fr 1fr; gap:var(--sp-5); }
 .w2-loading .ui-skeleton--text { margin-top:var(--sp-3); }
+.fl .fl-player-more { display:none; }
 @media(max-width:820px) {
  .fl-head { gap:var(--sp-3); }
  .fl-title h1 { font-size:var(--fs-2xl); }
@@ -190,8 +191,15 @@
 .fl-ai .ui-chip { min-height:0; padding:2px 8px; font-size:12px; line-height:18px; border:0; border-radius:999px; }
 .fl-ai .ai-clip-chips { display:flex; flex-wrap:wrap; gap:6px; }
 @media(max-width:820px) {
- .fl .ui-player-controls { flex-wrap:wrap; gap:4px; padding:0 8px; min-height:44px; }
- .fl .ui-player-controls input[type=range] { order:-1; flex-basis:100%; min-width:44px; }
+ .fl .hl-item { display:grid; grid-template-columns:80px minmax(0,1fr) 44px; column-gap:var(--sp-3); row-gap:0; }
+ .fl .hl-item .fl-moment-jump { grid-column:1; grid-row:1 / span 2; flex-direction:column; padding:0; margin:0; gap:0; }
+ .fl .hl-item p { grid-column:2 / 4; grid-row:1; }
+ .fl .hl-item .ui-suggested-actions { grid-column:2; grid-row:2; justify-self:end; }
+ .fl .hl-item .fl-moment-menu { grid-column:3; grid-row:2; }
+ .fl .ui-player-controls { flex-wrap:nowrap; height:44px; gap:4px; padding:0 8px; min-height:44px; }
+ .fl .ui-player-controls input[type=range] { order:0; flex:1 1 44px; width:0; min-width:44px; }
  .fl .ui-player-clock { font-size:12px; }
- .fl .ui-player-clock { margin-right:auto; }
+ .fl .ui-player-clock { margin-right:0; }
+ .fl .fl-player-secondary, .fl .fl-quality { display:none; }
+ .fl .fl-player-more { display:inline-flex; }
 }

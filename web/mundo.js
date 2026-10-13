@@ -1,9 +1,10 @@
-import { fmt } from './ui/format.js?v=438';
-import { term } from './ui/terms.js?v=438';
-import { Suggested } from './ui/suggested.js?v=438';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=438';
-import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=438';
-import { coverageRows } from './scene-improve-state.js?v=438';
+import { thumbnailURL } from './ui/thumbnail.js?v=442';
+import { fmt } from './ui/format.js?v=442';
+import { term } from './ui/terms.js?v=442';
+import { Suggested } from './ui/suggested.js?v=442';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=442';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=442';
+import { coverageRows } from './scene-improve-state.js?v=442';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -26,21 +27,25 @@ const best = cid => { try { const t = parseFloat(localStorage.getItem(`ab.fv.bes
 // la capa falla en silencio y se ve la siguiente
 // una sola capa: con dos (thumb + ortho de respaldo) el navegador descarga AMBAS
 // imágenes siempre. tresd_publish genera ortho_thumb.webp en cada publicación.
+const posterURLs = sc => [...new Set([sc.assets?.poster, sc.assets?.ortho, sc.cover?.frame_url,
+  ...sceneSources(sc).map(clip_id => thumbnailURL({clip_id}))].filter(Boolean))];
 const bgLayers = (p, q) => (p ? `url(${q}${p}${q})` : 'none');
 // Mientras la miniatura no está lista (o no existe) la tarjeta muestra el placeholder neutro
 // (.wi-poster::before: degradado + inicial de la isla); al cargar, .has-img lo oculta.
 const hydratePreview = card => {
   const poster = card?.querySelector('.wi-poster');
   if (!poster || poster.dataset.previewLoaded === 'true') return false;
-  const url = poster.dataset.preview || '';
+  const urls = JSON.parse(poster.dataset.previews || '[]');
   poster.dataset.previewLoaded = 'true';
-  if (url) {
-    poster.style.backgroundImage = bgLayers(url, '"');   // síncrono; el placeholder (::before) la cubre hasta que carga
-    const probe = new Image();
-    probe.onload = () => poster.classList.add('has-img');
-    probe.onerror = () => { poster.style.backgroundImage = 'none'; };   // 404: queda el placeholder
+  const probe = new Image();
+  const next = () => {
+    const url = urls.shift();
+    if (!url) return;
+    probe.onload = () => { poster.style.backgroundImage = bgLayers(url, '"'); poster.classList.add('has-img'); };
+    probe.onerror = next;
     probe.src = url;
-  }
+  };
+  next();
   return true;
 };
 
@@ -119,7 +124,7 @@ function isla(sc, i) {
   return `
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
 >
-    <a class="wi-open" href="share.html?m=${encodeURIComponent(sc.clip_id)}" aria-label="Explorar ${esc(sceneTitle(sc.displayName || sc.name))}"><div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.cover?.frame_url||'')}" data-transition-key="world-${esc(sc.clip_id)}"></div></a>
+    <a class="wi-open" href="share.html?m=${encodeURIComponent(sc.clip_id)}" aria-label="Explorar ${esc(sceneTitle(sc.displayName || sc.name))}"><div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-previews="${esc(JSON.stringify(posterURLs(sc)))}" data-transition-key="world-${esc(sc.clip_id)}"></div></a>
 
 
 
@@ -481,7 +486,7 @@ async function boot() {
   const missionPopup = sc => {
     const rec = best(sc.clip_id), st = sc.stats || {};
       return `<div class="fv-pop">
-      <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.cover?.frame_url||'', "'"))}"></div>
+      <div class="fv-pop-poster" style="background-image:${esc(bgLayers(posterURLs(sc)[0]||'', "'"))}"></div>
       <b>${esc(sceneTitle(sc.displayName || sc.name))}</b>
       ${descriptions.get(sc.clip_id)?.caption_short ? suggestionBlock({title:'',text:descriptions.get(sc.clip_id).caption_short,fullText:descriptions.get(sc.clip_id).caption}).outerHTML : ''}
       <span>${st.gsd_cm_px ? fmt.number(st.gsd_cm_px,1) + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + fmt.number(rec,1) + 's' : ''}</span>
@@ -512,7 +517,7 @@ async function boot() {
         .setHTML(missionPopup(sc));
       const dot = document.createElement('div');
       dot.className = 'fv-pin2' + (sc.capabilities?.splat ? ' splat' : '');
-      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.cover?.frame_url||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.displayName || sc.name).split(' · ')[0])}</span>`;
+      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(posterURLs(sc)[0]||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.displayName || sc.name).split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
       dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, duration: reducedMotion() ? 0 : 340 }));
     }

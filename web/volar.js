@@ -13,35 +13,35 @@
 //   modes/*  (D) enemigos, Invasión, Gate Rush → installEnemies(ctx)
 //   tour/*   (E) ghost, autopiloto, director   → installTour(ctx)
 // Contrato: docs/FLIGHTVERSE_DESIGN_SPEC.md §15. Flag ?fv=2 → ctx.flags.fv2.
-import * as THREE from '/flightverse/three.js?v=438';
+import * as THREE from '/flightverse/three.js?v=442';
 import {
   loadManifest, loadTerrain, attachSplat, attachVisualMesh, createSceneGeneration,
-} from '/flightverse/scene.js?v=438';
+} from '/flightverse/scene.js?v=442';
 import {
   createLoop, createInput, createDrone, MODES, STEP,
-} from '/flightverse/runtime.js?v=438';
-import { createAudio } from '/flightverse/audio.js?v=438';
-import { createSky } from '/flightverse/sky.js?v=438';
-import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=438';
-import { loadSceneObjects } from '/flightverse/objects.js?v=438';
-import { createWorldCollision } from '/flightverse/world-collision.js?v=438';
-import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=438';
-import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=438';
-import { splatAlignmentLabel } from '/flightverse/hud-format.js?v=438';
-import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=438';
-import { createBus } from '/flightverse/bus.js?v=438';
-import { mountUi, installUi } from '/flightverse/ui/index.js?v=438';
-import { bootProgress, markLayerUnavailable, bootError } from '/flightverse/ui/screens.js?v=438';
-import { installFx } from '/flightverse/fx/index.js?v=438';
-import { installControls, createDroneModel } from '/flightverse/input/index.js?v=438';
-import { installEnemies } from '/flightverse/modes/index.js?v=438';
-import { installTour } from '/flightverse/tour/index.js?v=438';
+} from '/flightverse/runtime.js?v=442';
+import { createAudio } from '/flightverse/audio.js?v=442';
+import { createSky } from '/flightverse/sky.js?v=442';
+import { createVegetation, reducedMotion } from '/flightverse/vegetation.js?v=442';
+import { loadSceneObjects } from '/flightverse/objects.js?v=442';
+import { createWorldCollision } from '/flightverse/world-collision.js?v=442';
+import { createRenderQualityGovernor } from '/flightverse/render-quality.js?v=442';
+import { createLazyLayerLoader, markLoadStep } from '/flightverse/layer-load-state.js?v=442';
+import { splatAlignmentLabel } from '/flightverse/hud-format.js?v=442';
+import { createMutableCollisionWorld } from '/flightverse/scene-object-collision.js?v=442';
+import { createBus } from '/flightverse/bus.js?v=442';
+import { mountUi, installUi } from '/flightverse/ui/index.js?v=442';
+import { bootProgress, markLayerUnavailable, bootError } from '/flightverse/ui/screens.js?v=442';
+import { installFx } from '/flightverse/fx/index.js?v=442';
+import { installControls, createDroneModel } from '/flightverse/input/index.js?v=442';
+import { installEnemies } from '/flightverse/modes/index.js?v=442';
+import { installTour } from '/flightverse/tour/index.js?v=442';
 import {
   EffectComposer, RenderPass, EffectPass, Effect,
   SMAAEffect, SMAAPreset, BloomEffect,
   ToneMappingEffect, ToneMappingMode, VignetteEffect,
   BrightnessContrastEffect, HueSaturationEffect,
-} from '/vendor/postprocessing180.module.js?v=438';
+} from '/vendor/postprocessing180.module.js?v=442';
 
 
 // exposición multiplicativa ANTES del tonemap — el 'brillo' aditivo del panel

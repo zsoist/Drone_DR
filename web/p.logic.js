@@ -14,7 +14,7 @@ export function galleryFrames(property) {
     urls.add(frame.frame_url); selected.push(frame);
     if (selected.length === 6) break;
   }
-  return selected.map(frame => frame.frame_url);
+  return selected.length >= 4 ? selected.map(frame => frame.frame_url) : [];
 }
 
 export function propertyCover(property) {

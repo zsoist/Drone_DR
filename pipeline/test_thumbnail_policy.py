@@ -35,10 +35,10 @@ class ThumbnailPolicy(unittest.TestCase):
         result = frame_api.project({'clip_id': 'clip'}, self.vault)
         self.assertEqual('/data/frames/clip/f_0002.jpg', result.get('thumbnail_url'))
 
-    def test_privacy_rejected_thumbnail_uses_another_frame_of_the_clip(self):
+    def test_rejected_featured_cover_keeps_normal_private_thumbnail(self):
         (self.vault / 'ai/clip.json').write_text(json.dumps({'summary': 'Un cartel con teléfono.', 'duration_s': 8}))
         result = frame_api.project({'clip_id': 'clip'}, self.vault)
-        self.assertEqual('/data/frames/clip/f_0001.jpg', result.get('thumbnail_url'))
+        self.assertEqual('/data/thumbs/clip.jpg', result.get('thumbnail_url'))
         self.assertEqual([], insights.property_media({'clip': 'clip'}, self.vault)['gallery'])
 
     def test_archive_frames_keep_quality_while_featured_gallery_fails_closed(self):
@@ -49,11 +49,15 @@ class ThumbnailPolicy(unittest.TestCase):
         self.assertEqual('rejected', result['frames'][0]['quality']['status'])
         self.assertEqual([], result['gallery'])
 
+    def test_scene_keeps_existing_ortho_poster(self):
+        result = frame_api.project({'clip_id': 'clip', 'assets': {'poster': '/data/models/clip/ortho.webp'}}, self.vault)
+        self.assertEqual('/data/models/clip/ortho.webp', result['assets']['poster'])
+
     def test_search_keeps_matching_clip_without_approved_frame(self):
         (self.vault / 'ai/clip.json').write_text(json.dumps({'summary': 'Edificios con un cartel.'}))
         result = frame_api.project(insights.search('edificios', vault=self.vault), self.vault)
         self.assertEqual(['clip'], [row['clip_id'] for row in result['results']])
-        self.assertTrue(result['results'][0]['thumbnail_url'].startswith('/data/frames/clip/'))
+        self.assertEqual('/data/thumbs/clip.jpg', result['results'][0]['thumbnail_url'])
 
 
 if __name__ == '__main__':

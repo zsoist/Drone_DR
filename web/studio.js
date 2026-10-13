@@ -1,11 +1,12 @@
-import { createSheet } from './ui/sheet.js?v=438';
-import { showToast as toast } from './ui/toast.js?v=438';
-import { registerPaletteSource } from './ui/palette.js?v=438';
-import { fmt } from './ui/format.js?v=438';
-import { mountTabs } from './ui/tabs.js?v=438';
-import { Suggested } from './ui/suggested.js?v=438';
-import { skinPlayer } from './ui/player.js?v=438';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=438';
+import { thumbnailURL } from './ui/thumbnail.js?v=442';
+import { createSheet } from './ui/sheet.js?v=442';
+import { showToast as toast } from './ui/toast.js?v=442';
+import { registerPaletteSource } from './ui/palette.js?v=442';
+import { fmt } from './ui/format.js?v=442';
+import { mountTabs } from './ui/tabs.js?v=442';
+import { Suggested } from './ui/suggested.js?v=442';
+import { skinPlayer } from './ui/player.js?v=442';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=442';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
 function mountReelPreview(video, segments, sourceURL, posterFor, onSegment) {
@@ -1438,7 +1439,8 @@ pollJobs(jobsEl, 2500, j => {
     const data = covers[cid], cover = data?.cover || data?.ai?.cover;
     // Owner choices bypass quality filtering, but still use a local media URL.
     return approvedFrameURL(cover?.selection === 'owner' ? {...cover, quality:{eligible:true}} : cover)
-      || (data?.frames || []).map(approvedFrameURL).find(Boolean) || '';
+      || (data?.frames || []).map(approvedFrameURL).find(Boolean)
+      || thumbnailURL({ ...data, clip_id: cid });
   };
   const thumbnail = (cid, width = 96, height = 54) => {
     const url = posterFor(cid);
