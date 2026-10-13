@@ -1,4 +1,3 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=434';
 import { createSheet } from './ui/sheet.js?v=434';
 import { showToast as toast } from './ui/toast.js?v=434';
 import { registerPaletteSource } from './ui/palette.js?v=434';
@@ -6,7 +5,7 @@ import { fmt } from './ui/format.js?v=434';
 import { mountTabs } from './ui/tabs.js?v=434';
 import { Suggested } from './ui/suggested.js?v=434';
 import { skinPlayer } from './ui/player.js?v=434';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=434';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, clipCaption, highlightSuggestions, analysisCaption, reelPosition, approvedFrameURL } from './studio.logic.js?v=435';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
 function mountReelPreview(video, segments, sourceURL, posterFor, onSegment) {
@@ -1435,7 +1434,12 @@ pollJobs(jobsEl, 2500, j => {
   const byId = Object.fromEntries(editable.map(f => [f.clip_id, f]));
   const insights = {};
   const covers = Object.fromEntries(editable.map(f => [f.clip_id, f]));
-  const posterFor = cid => thumbnailURL(covers[cid]);
+  const posterFor = cid => {
+    const data = covers[cid], cover = data?.cover || data?.ai?.cover;
+    // Owner choices bypass quality filtering, but still use a local media URL.
+    return approvedFrameURL(cover?.selection === 'owner' ? {...cover, quality:{eligible:true}} : cover)
+      || (data?.frames || []).map(approvedFrameURL).find(Boolean) || '';
+  };
   const thumbnail = (cid, width = 96, height = 54) => {
     const url = posterFor(cid);
     return url ? `<img src="${esc(url)}" loading="lazy" alt="" width="${width}" height="${height}">`
@@ -2153,7 +2157,7 @@ pollJobs(jobsEl, 2500, j => {
         return `<article class="st-suggestion-item">
           <button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}" aria-label="Ver toma ${i+1}: ${esc(h.caption)}">
             ${thumbnail(h.cid)}
-            <span><b>${esc(h.caption)}</b><small>${esc(flight.label || fmt.date(flight.date))} · ${fmt.clock(h.a)}–${fmt.clock(h.b)}</small></span>
+            <span><b>${esc(h.caption || `${fmt.date(flight.date)} · ${flight.time || ''}`)}</b><small>${esc(fmt.date(flight.date))} · ${fmt.clock(h.a)}–${fmt.clock(h.b)} · ${fmt.duration(h.b-h.a)}</small></span>
           </button>
           ${h.description ? `<details class="st-analysis-detail"><summary aria-label="Descripción de la toma ${i+1}">${icon('chevD')}</summary><p>${esc(h.description)}</p></details>` : ''}
         </article>`;
@@ -3334,24 +3338,24 @@ pollJobs(jobsEl, 2500, j => {
     let railDay = null;
     const visible = editable.filter(f => {
       const insight = insights[f.clip_id];
-      return (!tagFilter.value || insight?.tags?.includes(tagFilter.value))
+      return (!tagFilter.value || (f.tags || insight?.tags || []).includes(tagFilter.value))
         && (!onlyClean || (insight && Array.isArray(insight.quality_flags) && !insight.quality_flags.length));
     });
     rail.innerHTML = visible.slice(0, libraryLimit).map(f => {
       const insight = insights[f.clip_id];
       const day = f.date !== railDay ? `<div class="cr-day" role="presentation"><b>${esc(fmtDayShort(f.date))}</b></div>` : '';
       railDay = f.date;
-      const tags = (insight?.tags || []).map(tag => tag.toLowerCase() === 'drone' ? 'dron' : tag).slice(0,2);
+      const tags = (f.tags || insight?.tags || []).map(tag => tag.toLowerCase() === 'drone' ? 'dron' : tag).slice(0,2);
       const flags = (insight?.quality_flags || []).filter(flag => qualityLabels[flag]);
-      const caption = insight?.caption_short || (insight?.caption ? analysisCaption(insight.caption) : '');
+      const caption = clipCaption(f, insight) || [fmt.date(f.date), f.time].filter(Boolean).join(' · ');
       return `${day}<div class="st-source-card">
-        <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
+        <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(caption)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
           ${thumbnail(f.clip_id,320,180)}
           <span class="scrub-line"></span>
           <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
           <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
         </div>
-        ${caption ? `<details class="st-source-caption"><summary><span>${esc(caption)}</span>${icon('chevD')}</summary><p>${esc(insight.caption || caption)}</p></details>` : `<p class="st-source-title">${esc(f.label || 'Toma del vuelo')}</p>`}
+        <div class="st-source-heading">${insight?.caption ? `<details class="st-source-caption"><summary><span>${esc(caption)}</span>${icon('chevD')}</summary><p>${esc(insight.caption)}</p></details>` : `<p class="st-source-title"><span>${esc(caption)}</span></p>`}</div>
         <div class="st-source-tags">${tags.map(tag=>`<span class="ui-chip">${esc(tag)}</span>`).join('')}</div>
         <div class="st-source-flags">${flags.map(flag=>`<span>${esc(qualityLabels[flag])}</span>`).join('')}</div>
         ${!insightsLoaded && !insight ? '<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>' : ''}
@@ -3371,7 +3375,7 @@ pollJobs(jobsEl, 2500, j => {
   renderLibrary();
   loadInsights().then(() => {
     insightsLoaded = true;
-    const tags = [...new Set(Object.values(insights).flatMap(insight=>insight?.tags || []))].sort((a,b)=>a.localeCompare(b,'es'));
+    const tags = [...new Set(editable.flatMap(f=>f.tags || insights[f.clip_id]?.tags || []))].sort((a,b)=>a.localeCompare(b,'es'));
     tagFilter.innerHTML = '<option value="">Todas las etiquetas</option>' + tags.map(tag=>`<option value="${esc(tag)}">${esc(displayTag(tag))}</option>`).join('');
     tagFilter.disabled = !tags.length; qualityFilter.disabled = !Object.values(insights).some(Boolean);
     insightStatus.textContent = insightErrors.size ? 'No se pudieron cargar algunas etiquetas. Vuelve a abrir Studio para reintentar.'

@@ -1,7 +1,7 @@
 // Editor de fotos premium compartido (flight + studio). Requiere shell.js e icons.js.
 async function openPhotoEditor({ url, name }) {
   if (!document.querySelector('link[href*="css/studio.css"]')) {
-    const link=document.createElement('link');link.rel='stylesheet';link.href='css/studio.css?v=434';document.head.append(link);
+    const link=document.createElement('link');link.rel='stylesheet';link.href='css/studio.css?v=435';document.head.append(link);
   }
   const { mountTabs } = await import('./ui/tabs.js?v=434');
   const { createSheet } = await import('./ui/sheet.js?v=434');

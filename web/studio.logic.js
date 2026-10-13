@@ -19,6 +19,11 @@ export function joinOverlap(segments, index, fps = 30) {
 export function missingSources(project, byId) {
   return (project.tl || []).filter(s => !s || !byId[s.clip_id]).length;
 }
+// Owner titles take precedence. Never use a highlight label as a clip title.
+export function clipCaption(flight, insight) {
+  return flight.label?.trim() || insight?.caption_short?.trim() || flight.ai?.caption_short?.trim()
+    || insight?.caption?.trim() || '';
+}
 export function highlightSuggestions(flights, insights) {
   return flights.flatMap(f => {
     const insight = insights[f.clip_id];
@@ -34,7 +39,7 @@ export function highlightSuggestions(flights, insights) {
       if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b <= a || b > f.duration_s
           || !Number.isFinite(f.duration_s) || !Number.isFinite(score) || score < 0 || score > 1) return [];
       return [{ cid: f.clip_id, a, b, label: f.label || f.date,
-        caption: insight.caption_short || analysisCaption(insight.caption),
+        caption: clipCaption(f, insight),
         description: insight.caption || '', reason: h.reason || '', score }];
     });
   }).sort((a, b) => b.score - a.score).slice(0, 10);
