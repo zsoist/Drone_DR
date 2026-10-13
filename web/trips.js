@@ -1,5 +1,7 @@
-import { readAI, loadInsights, clipChips, captionView } from './home.ai.js?v=402';
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor } from './home-shared.js?v=402';
+import { fmt } from './ui/format.js?v=407';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=407';
+import { readAI, loadInsights, clipChips } from './home.ai.js?v=407';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=407';
 const main = renderShell('trips.html');
 main.classList.add('tr-page', 'ab-page');
 const CITIES = [
@@ -17,13 +19,13 @@ const havKm = (a, b, c, d) => 12742 * Math.asin(Math.sqrt(
   Math.sin((c - a) * R0 / 2) ** 2 + Math.cos(a * R0) * Math.cos(c * R0) * Math.sin((d - b) * R0 / 2) ** 2));
 
 
-let clusters = [], flights = [], tripsMeta = {}, routeData = [], map = null;
+let clusters = [], flights = [], tripsMeta = {}, routeData = [], map = null, mapSkin = null;
 document.addEventListener('ab-theme-change', () => { if (map?.getLayer('routes')) map.setPaintProperty('routes', 'line-color', dataColor()); });
 const params = () => new URLSearchParams(location.search);
 const linkFor = c => `trips.html?trip=${encodeURIComponent(c.key)}`;
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
 const flightTitle = f => f.label || `${fmt.date(f.date)} · ${f.time || 'Vuelo'}`;
-const tripDistance = meters => `${(meters / 1000).toLocaleString('es-CO', { maximumFractionDigits: 2 })} km`;
+const tripDistance = fmt.distance;
 const rangeFor = c => `${fmt.date(c.dates[0])}${c.dates.length > 1 ? ' — ' + fmt.date(c.dates.at(-1)) : ''}`;
 
 async function optionalJSON(url, fallback) {
@@ -72,7 +74,7 @@ async function load() {
   } catch { renderFailure(main, load); }
 }
 function render() {
-  map?.remove(); map = null;
+  mapSkin?.destroy(); map?.remove(); map = null;
   const selected = params().get('trip');
   if (selected) {
     const c = clusters.find(c => c.key === selected);
@@ -81,49 +83,107 @@ function render() {
     return;
   }
   const isMap = params().get('view') === 'map';
-  main.innerHTML = `<header class="tr-heading"><div><h1>Viajes</h1><p>${clusters.length} lugares · ${flights.length} vuelos</p></div><a class="ui-button ui-button--primary" href="index.html">Ver vuelos ${icon('arrowR')}</a></header>
-    <nav class="tr-view ui-segmented" aria-label="Vista de viajes"><a class="ui-button ui-button--quiet" ${!isMap ? 'aria-current="page"' : ''} href="trips.html">${icon('list')} Lista</a><a class="ui-button ui-button--quiet" ${isMap ? 'aria-current="page"' : ''} href="trips.html?view=map">${icon('map')} Mapa</a></nav>
+  main.classList.toggle('tr-map-page', isMap);
+  const located = clusters.reduce((sum, c) => sum + c.flights.length, 0);
+  main.innerHTML = `<header class="tr-heading"><div><h1>Viajes</h1><p>${fmt.number(clusters.length)} lugares · ${fmt.number(located)} vuelos con GPS</p></div><a class="ui-button ui-button--quiet" href="index.html">Ver vuelos ${icon('arrowR')}</a></header>
+    <div class="tr-view ui-segmented" role="group" aria-label="Vista de viajes"><button aria-pressed="${!isMap}" data-view-link="trips.html">${icon('list')} Lista</button><button aria-pressed="${isMap}" data-view-link="trips.html?view=map">${icon('map')} Mapa</button></div>
     ${isMap && clusters.length ? '<div class="tr-map" id="trip-map" aria-label="Mapa de viajes"></div>' : ''}
-    <div class="tr-places ${isMap ? 'tr-places-compact' : ''}">${clusters.map(c => `<article class="tr-place"><a href="${linkFor(c)}" class="tr-place-link"><img src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-place-copy"><h2>${esc(c.name)}</h2><p>${rangeFor(c)}</p><span>${c.flights.length} vuelos · ${tripDistance(c.dist)} · ${fmt.hours(c.dur)}</span></div></a><button class="ui-button ui-button--quiet tr-more" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></article>`).join('') || '<div class="ui-empty"><h2>Tus lugares aparecerán aquí</h2><p>Sube un vuelo con GPS para empezar tu diario.</p><a class="ui-button ui-button--primary" href="studio.html?via=subir">Subir video</a><p>Por ejemplo, tu próxima visita a los cerros.</p></div>'}</div>`;
+    <div class="tr-places ${isMap ? 'tr-places-compact' : ''}">${clusters.map(c => `<article class="tr-place" data-place="${esc(c.key)}"><a href="${linkFor(c)}" class="tr-place-link"><img src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-place-copy"><h2>${esc(c.name)}</h2><p>${rangeFor(c)}</p><span>${figure(fmt.number(c.flights.length))} vuelos · ${figure(tripDistance(c.dist))} · ${figure(fmt.duration(c.dur))}</span></div></a><button class="ui-button ui-button--quiet tr-more" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></article>`).join('') || '<div class="ui-empty"><h2>Tus lugares aparecerán aquí</h2><p>Sube un vuelo con GPS para empezar tu diario.</p><a class="ui-button ui-button--primary" href="studio.html?via=subir">Subir video</a><p>Por ejemplo, tu próxima visita a los cerros.</p></div>'}</div>`;
   if (isMap && clusters.length) mountMap(clusters.flatMap(c => c.flights), true);
   bindActions();
 }
 function renderDetail(c) {
-  const dates = [...c.dates].reverse();
-  main.innerHTML = `<a class="ui-button ui-button--quiet tr-back" href="trips.html">${icon('arrowL')} Viajes</a>
-    <header class="tr-detail-head"><div><h1>${esc(c.name)}</h1><p>${rangeFor(c)}</p></div><div class="tr-actions"><button class="ui-button ui-button--primary" data-postal="${esc(c.key)}">${icon('dl')} Descargar postal</button><button class="ui-button ui-button--quiet" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></div></header>
+  main.classList.remove('tr-map-page');
+  main.innerHTML = `${shell.backLink('Viajes', '/trips.html')}
+    <header class="tr-detail-head"><div><h1>${esc(c.name)}</h1><p>${rangeFor(c)}</p></div><div class="tr-actions"><a class="ui-button ui-button--primary" href="${flightLink(c.cover)}">${icon('play')} Ver recorrido</a><button class="ui-button ui-button--quiet" data-menu="${esc(c.key)}" aria-label="Opciones de ${esc(c.name)}">${icon('more')}</button></div></header>
     <div class="tr-overview"><img class="tr-cover" src="${frameFor(c.cover, c.coverTime)}" alt="Vista aérea de ${esc(c.name)}" data-transition-key="trip-${esc(c.key.replace(/[^\w-]/g, '-'))}"><div class="tr-map" id="trip-map" aria-label="Rutas del viaje"></div></div>
-    <dl class="tr-facts"><div><dt>Vuelos</dt><dd>${c.flights.length}</dd></div><div><dt>En el aire</dt><dd>${fmt.hours(c.dur)}</dd></div><div><dt>Recorrido</dt><dd>${tripDistance(c.dist)}</dd></div><div><dt>Altura máxima</dt><dd>${Math.round(c.alt)} m</dd></div></dl>
+    <dl class="tr-facts"><div><dt>Vuelos</dt><dd>${figure(fmt.number(c.flights.length))}</dd></div><div><dt>En el aire</dt><dd>${figure(fmt.duration(c.dur))}</dd></div><div><dt>Recorrido</dt><dd>${figure(tripDistance(c.dist))}</dd></div><div><dt>Altura máxima</dt><dd>${figure(fmt.distance(c.alt))}</dd></div></dl>
     <section class="tr-recap" id="trip-recap" aria-busy="true"><h2>El viaje en una mirada</h2>${skeleton(2)}</section>
-    <section class="tr-section"><h2>Diario de vuelos</h2><p class="w2-note">Sugerido · Etiquetas y observaciones</p>${dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${c.flights.filter(f => f.date === date).map(f => `<article class="tr-journal-clip" data-clip="${esc(f.clip_id)}"><a class="tr-flight" href="${flightLink(f)}"><img src="${frameFor(f)}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(flightTitle(f))}</strong><span>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</span></span>${icon('arrowR')}</a><div class="tr-clip-insight" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div></article>`).join('')}</div></section>`).join('')}</section>`;
+    <section class="tr-section"><h2>Diario de vuelos</h2><div id="tr-journal"></div>${c.flights.length > 10 ? `<button class="ui-button ui-button--secondary" id="tr-more-flights" aria-expanded="false">Ver los ${fmt.number(c.flights.length)} vuelos</button>` : ''}</section>`;
+  mountMap(c.flights);
+  let expanded = false;
+  const journal = document.getElementById('tr-journal');
+  function renderJournal() {
+    const rows = expanded ? c.flights : c.flights.slice(0, 10);
+    const dates = [...new Set(rows.map(f => f.date))];
+    const content = dates.map(date => `<section class="tr-day"><h3>${fmt.date(date)}</h3><div class="tr-flights">${rows.filter(f => f.date === date).map(f => `<article class="tr-journal-clip" data-clip="${esc(f.clip_id)}"><a class="tr-flight" href="${flightLink(f)}"><img src="${frameFor(f)}" alt="" loading="lazy" data-transition-key="clip-${esc(f.clip_id)}"><span><strong>${esc(f.label || 'Vuelo')}</strong><span>${esc(f.time || '')} · ${figure(fmt.duration(f.duration_s))} · ${figure(fmt.distance(f.stats?.distance_m))}</span></span>${icon('arrowR')}</a><div class="tr-clip-insight" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div></article>`).join('')}</div></section>`).join('');
+    journal.replaceChildren(suggestedContent(content));
+    loadJournalInsights(rows);
+  }
+  renderJournal();
+  document.getElementById('tr-more-flights')?.addEventListener('click', e => {
+    expanded = !expanded; renderJournal();
+    e.currentTarget.textContent = expanded ? 'Mostrar menos' : `Ver los ${fmt.number(c.flights.length)} vuelos`;
+    e.currentTarget.setAttribute('aria-expanded', String(expanded));
+    if (!expanded) journal.scrollIntoView({ block: 'start' });
+  });
   loadRecap(c);
-  loadJournalInsights(c);
   bindActions();
 }
 function mountMap(rows, pins = false, routes = routeData.routes || []) {
+  const ids = new Set(rows.map(f => f.clip_id));
+  const selected = routes.filter(r => ids.has(r.cid) && r.line?.length > 1);
   const bounds = new maplibregl.LngLatBounds();
-  rows.forEach(f => { if (f.stats?.bbox) { bounds.extend(f.stats.bbox.slice(0, 2)); bounds.extend(f.stats.bbox.slice(2)); } });
+  selected.forEach(r => r.line.forEach(point => bounds.extend(point)));
+  if (bounds.isEmpty()) rows.forEach(f => { if (f.stats?.home) bounds.extend(f.stats.home); });
   if (bounds.isEmpty()) { document.getElementById('trip-map').innerHTML = '<p class="ui-empty">Sin rutas GPS para este viaje.</p>'; return; }
-  map = new maplibregl.Map({ container: 'trip-map', style: SAT_STYLE, cooperativeGestures: true, bounds, fitBoundsOptions: { ...FIT_OPTS, padding: pins ? { top: 128, right: 112, bottom: 80, left: 80 } : 64 }, attributionControl: { compact: true } });
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  const recent = !pins && (rows.map(f => selected.find(r => r.cid === f.clip_id)).find(Boolean));
+  const recentBounds = recent ? recent.line.reduce((box, point) => box.extend(point), new maplibregl.LngLatBounds()) : bounds;
+  map = new maplibregl.Map({ ...mapSkinOptions, container: 'trip-map', style: SAT_STYLE, cooperativeGestures: true, bounds: recentBounds, fitBoundsOptions: { padding: pins ? { top: 100, right: 124, bottom: 64, left: 64 } : { top: 32, right: 72, bottom: 100, left: 32 }, maxZoom: 17 } });
+  mapSkin = skinMap(map);
   const current = map;
+  if (recent) {
+    const context = document.createElement('div'); context.className = 'tr-map-context';
+    const flight = rows.find(f => f.clip_id === recent.cid);
+    context.innerHTML = `<span>Ruta del ${fmt.date(flight?.date)} · ${esc(flight?.time || '')}</span><button class="ui-button ui-button--secondary" aria-pressed="false">Ver todas las rutas</button>`;
+    current.getContainer().append(context);
+    const toggle = context.querySelector('button'); toggle.disabled = true;
+    current.once('load', () => { toggle.disabled = false; });
+    current.once('remove', () => context.remove());
+    context.querySelector('button').addEventListener('click', e => {
+      const all = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+      e.currentTarget.setAttribute('aria-pressed', String(all));
+      e.currentTarget.textContent = all ? 'Ver ruta reciente' : 'Ver todas las rutas';
+      context.querySelector('span').textContent = all ? `${fmt.number(selected.length)} rutas del viaje` : `Ruta del ${fmt.date(flight?.date)} · ${flight?.time || ''}`;
+      if (current.getLayer('routes')) current.setFilter('routes', all ? null : ['==', 'cid', recent.cid]);
+      current.fitBounds(all ? bounds : recentBounds, { padding: { top: 32, right: 72, bottom: 100, left: 32 }, maxZoom: 17, duration: document.documentElement.dataset.motion === 'reduced' ? 0 : 340 });
+    });
+  }
+  const resize = new ResizeObserver(() => current.resize()); resize.observe(document.getElementById('trip-map'));
+  current.on('remove', () => resize.disconnect());
   current.on('load', () => {
-    const ids = new Set(rows.map(f => f.clip_id));
-    const features = routes.filter(r => ids.has(r.cid)).map(r => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: r.line } }));
+    const features = selected.map(r => ({ type: 'Feature', properties: { cid: r.cid }, geometry: { type: 'LineString', coordinates: r.line } }));
     current.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-    current.addLayer({ id: 'routes', type: 'line', source: 'routes', paint: { 'line-color': dataColor(), 'line-width': 3 } });
+    current.addLayer({ id: 'routes', type: 'line', source: 'routes', ...(recent ? { filter: ['==', 'cid', recent.cid] } : {}), paint: { 'line-color': dataColor(), 'line-width': 4 } });
+    current.addLayer({ id: 'route-selected', type: 'line', source: 'routes', filter: ['in', 'cid', ''], paint: { 'line-color': dataColor(), 'line-width': 7 } });
     if (pins) clusters.forEach(c => {
-      const el = document.createElement('a'); el.className = 'ui-button ui-button--secondary tr-pin'; el.href = linkFor(c); el.textContent = c.name;
-      new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(current);
+      const el = document.createElement('a'); el.className = 'tr-pin'; el.href = linkFor(c);
+      el.setAttribute('aria-label', `Ver ${c.name}`);
+      const score = Math.max(0, Math.min(1, (Number(c.best.ai?.travel_score) || 0) / 10));
+      el.style.setProperty('--pin-size', `${18 + score * 18}px`);
+      el.innerHTML = `<span>${esc(c.name)}</span><i aria-hidden="true"></i>`;
+      new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([c.lon, c.lat]).addTo(current);
+      const card = [...main.querySelectorAll('[data-place]')].find(node => node.dataset.place === c.key);
+      const select = active => {
+        card?.classList.toggle('tr-place-active', active); el.classList.toggle('tr-pin-active', active);
+        current.setFilter('route-selected', ['in', 'cid', ...(active ? c.flights.map(f => f.clip_id) : [''])]);
+      };
+      for (const node of [el, card].filter(Boolean)) {
+        node.addEventListener('mouseenter', () => select(true)); node.addEventListener('mouseleave', () => select(false));
+        node.addEventListener('focusin', () => select(true)); node.addEventListener('focusout', () => select(false));
+      }
     });
   });
 }
-async function loadJournalInsights(c) {
+async function loadJournalInsights(rows) {
   const entries = [...main.querySelectorAll('.tr-journal-clip')];
-  const { insights, failed } = await loadInsights(c.flights);
+  const { insights, failed } = await loadInsights(rows);
   for (const entry of entries) {
+    if (!entry.isConnected) continue;
+    const insight = insights[entry.dataset.clip], flight = rows.find(f => f.clip_id === entry.dataset.clip);
+    if (!flight.label && insight?.caption_short) entry.querySelector('strong').textContent = insight.caption_short;
     const region = entry.querySelector('.tr-clip-insight');
-    region.innerHTML = `${captionView(insights[entry.dataset.clip])}${clipChips(insights[entry.dataset.clip])}`;
+    region.innerHTML = clipChips(insight, { compact: true });
     region.setAttribute('aria-busy', 'false');
   }
   if (failed && entries[0]?.isConnected) entries[0].querySelector('.tr-clip-insight').insertAdjacentHTML('beforeend', '<p class="w2-note">No se pudieron cargar algunas etiquetas.</p>');
@@ -148,13 +208,30 @@ async function loadRecap(c) {
   try {
     const recap = await readAI(`/api/trip/${encodeURIComponent(c.recapKey)}/recap`);
     if (!region.isConnected) return;
-    region.innerHTML = `<div><h2>El viaje en una mirada</h2><span class="w2-note">Sugerido</span></div><div><p class="tr-summary">${esc(recapText(recap, c))}</p></div><div class="tr-frames">${(recap.best_frames || []).slice(0, 6).map(frame => `<a href="flight.html?id=${encodeURIComponent(frame.clip_id)}&t=${frame.time_s}"><img src="${esc(frame.frame_url)}" alt="Fotograma del viaje" loading="lazy"><span>${fmt.dur(frame.time_s)} · Ver momento</span></a>`).join('')}</div>`;
-    map?.remove(); map = null;
-    mountMap(c.flights, false, (recap.route || []).map(r => ({ cid: r.clip_id, line: r.coordinates })));
+    const { insights } = await loadInsights(c.flights);
+    if (!region.isConnected) return;
+    // Spread frames across dates and clips; never turn a zero timestamp into a highlight.
+    const chosen = [], used = new Set();
+    const dates = [...c.dates].reverse();
+    const candidates = dates.map(date => c.flights.filter(f => f.date === date).sort((a, b) => (b.ai?.travel_score || 0) - (a.ai?.travel_score || 0)));
+    for (let i = 0; i < c.flights.length && chosen.length < 6; i++) {
+      for (const group of candidates) {
+        const f = group[i]; if (!f || used.has(f.clip_id)) continue;
+        const time = insights[f.clip_id]?.best_frame_times?.find(t => Number.isFinite(t) && t > 0 && t < f.duration_s);
+        if (time == null) continue;
+        chosen.push({ flight: f, time }); used.add(f.clip_id);
+        if (chosen.length === 6) break;
+      }
+    }
+    region.innerHTML = '<h2>El viaje en una mirada</h2>';
+    region.append(suggestedContent(`<p class="tr-summary">${esc(recapText(recap, c))}</p><div class="tr-frames">${chosen.map(({ flight: f, time }) => `<a href="${flightLink(f)}&t=${time}"><img src="${frameFor(f, time)}" alt="${esc(insights[f.clip_id]?.caption_short || 'Fotograma del viaje')}" loading="lazy"><span>${esc(insights[f.clip_id]?.caption_short || fmt.date(f.date))}</span><small>${fmt.date(f.date)} · ${fmt.clock(time)}</small></a>`).join('')}</div>`));
+    const routes = (recap.route || []).map(r => ({ cid: r.clip_id, line: r.coordinates }));
+    if (routes.length) { mapSkin?.destroy(); map?.remove(); map = null; mountMap(c.flights, false, routes); }
   } catch { if (!region.isConnected) return; if (!map) mountMap(c.flights); region.innerHTML = '<h2>El viaje en una mirada</h2><p class="w2-note">No se pudo cargar el resumen. <button class="ui-button ui-button--quiet">Reintentar</button></p>'; region.querySelector('button').addEventListener('click', () => loadRecap(c)); }
   finally { region.setAttribute('aria-busy', 'false'); }
 }
 function bindActions() {
+  main.querySelectorAll('[data-view-link]').forEach(button => button.addEventListener('click', () => { location.href = button.dataset.viewLink; }));
   main.querySelectorAll('[data-menu]').forEach(button => button.addEventListener('click', () => {
     const c = clusters.find(c => c.key === button.dataset.menu);
     openMenu(button, [{ id: 'rename', label: 'Renombrar', icon: 'edit' }, { id: 'cover', label: 'Elegir portada', icon: 'image' }, { id: 'postal', label: 'Descargar postal', icon: 'dl' }], { onSelect: id => id === 'rename' ? renameCity(c) : id === 'cover' ? pickCover(c) : makePostal(c, button) });

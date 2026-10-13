@@ -108,3 +108,12 @@ test('collection membership and exact AI filters intersect the library', () => {
   state.tag = null; state.flag = 'inestable';
   assert.equal(context.matches({ clip_id: 'inside' }), false);
 });
+
+test('legacy fixed windows do not appear as observed flight moments', async () => {
+  const { credibleHighlights } = await import('./home.ai.js');
+  const legacy = { highlight_segments: [0, 90, 180, 270].map(start => ({ start, end: start + 46, score: .8 })) };
+  assert.deepEqual(credibleHighlights(legacy), []);
+  const observed = { start: 17, end: 26, score: .8, reason: 'Un vehículo cruza la calle.' };
+  assert.deepEqual(credibleHighlights({ highlight_segments: [{ start: 0, end: 8 }, observed] }), [observed]);
+  assert.deepEqual(credibleHighlights(null), []);
+});

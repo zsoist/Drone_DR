@@ -1,9 +1,12 @@
-import { readAI, captionView, clipChips } from './home.ai.js?v=402';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor } from './home-shared.js?v=402';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=402';
+import { fmt } from './ui/format.js?v=407';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=407';
+import { skinPlayer } from './ui/player.js?v=407';
+import { readAI, captionView, clipChips, credibleHighlights } from './home.ai.js?v=407';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=407';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=407';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
-main.classList.add('ab-page', 'ab-page--wide');
+main.classList.add('ab-page');
 const cid = new URLSearchParams(location.search).get('id');
 main.innerHTML = skeleton(2);
 
@@ -23,8 +26,8 @@ main.innerHTML = skeleton(2);
   const s = meta.stats || {};
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
-  // El reproductor nativo muestra el tiempo truncado (0:24); la cabecera usa el mismo criterio.
-  const durTxt = fmt.dur(Math.floor(meta.duration_s));
+  // Header and player share the same rounding rule.
+  const durTxt = fmt.duration(meta.duration_s);
   const speeds = pts.map((p, i) => i ? haversine(pts[i - 1], p) * 3.6 / Math.max(.001, times[i] - times[i - 1]) : 0);
 
   let has3D = false;
@@ -55,7 +58,6 @@ main.innerHTML = skeleton(2);
 
   const highlights = aiData?.highlights || [];
   const manualHighlights = highlights.filter(h => h.type === 'manual');
-  const suggestedHighlights = highlights.filter(h => h.type !== 'manual');
   const highlightRows = rows => rows.map(h => `<div class="hl-item">
     <button class="tc hit44" data-t="${+h.t || 0}">${fmt.dur(+h.t || 0)}</button>
     <p>${esc(h.reason)}${h.type === 'manual' ? ' <span class="fl-type">Marcado por ti</span>' : ''}</p>
@@ -65,10 +67,10 @@ main.innerHTML = skeleton(2);
 
   main.innerHTML = `
   <div class="fl">
+    ${shell.backLink('Vuelos', '/index.html')}
     <header class="fl-head">
-      <a class="ui-button ui-button--quiet" href="index.html">${icon('arrowL')} Vuelos</a>
       <div class="fl-title"><h1>${esc(meta.label || fmt.date(meta.date) + ' · ' + meta.time)}</h1><p>${durTxt} · ${meta.resolution === '3840x2160' ? '4K' : esc(meta.resolution)} · ${Math.round(meta.fps)} fps</p></div>
-      <div class="fl-actions">${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}<button class="ui-button ui-button--quiet" id="btn-label">${icon('edit')} Editar</button>${meta.has_proxy ? `<a class="ui-button ui-button--primary" href="studio.html?clip=${cid}">Abrir en Studio</a>` : ''}<button class="ui-button ui-button--quiet" id="btn-arch" aria-label="${meta.archived ? 'Desarchivar vuelo' : 'Archivar vuelo'}">${icon('db')}</button></div>
+      <div class="fl-actions">${navBtn(older, 'chevL', 'Vuelo anterior')}${navBtn(newer, 'chevR', 'Vuelo siguiente')}<button class="ui-button ui-button--quiet" id="btn-label">${icon('edit')} Editar</button>${meta.has_proxy ? `<a class="ui-button ui-button--primary" href="studio.html?clip=${cid}">Abrir en Studio</a>` : ''}</div>
     </header>
     <section class="fl-summary" id="flight-summary" aria-label="Resumen del vuelo" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></section>
 
@@ -76,10 +78,8 @@ main.innerHTML = skeleton(2);
       <div class="fl-main">
         <div class="panel videobox fl-video">
           <div id="video-slot" data-transition-key="clip-${esc(cid)}"></div>
-          <div class="fl-timeline"><button class="ui-button ui-button--quiet" id="fl-play" aria-label="Reproducir">${icon('play')}</button><output id="fl-clock" class="ui-figures">0:00</output><label class="sr-only" for="fl-seek">Tiempo del vuelo</label><div class="fl-scrubber"><input id="fl-seek" type="range" min="0" max="${meta.duration_s || 0}" step="0.1" value="0"><div class="fl-ticks" aria-hidden="true">${[0,1,2,3,4].map(i => `<span>${fmt.dur((meta.duration_s || 0) * i / 4)}</span>`).join('')}</div></div></div>
           <p id="fl-media-status" class="fl-hint" role="status" hidden></p><div class="fl-bar">
-            <div class="seg ui-segmented" id="q-seg" role="group" aria-label="Calidad de video"><button data-q="auto" class="on">Auto</button>${meta.has_proxy720 ? '<button data-q="720" data-tip="720p · ligero, ideal en LTE">720p</button>' : ''}${meta.has_proxy ? '<button data-q="hd" data-tip="1080p · balance calidad/datos">1080p</button>' : ''}${meta.raw_rel && hevcOK ? '<button data-q="4k" data-tip="Original 4K HEVC · pesado, mejor en WiFi">4K</button>' : ''}</div>
-            <button class="ui-button ui-button--quiet" id="fl-fullscreen" aria-label="Pantalla completa">Pantalla completa</button><button class="ui-button ui-button--quiet" id="btn-details">Detalles</button><button class="btn ui-button ui-button--secondary" id="btn-photo" data-tip="Extrae el frame actual del original 4K">${icon('iso')} Foto 4K</button>
+            <button class="ui-button ui-button--quiet" id="btn-details">Detalles</button><button class="btn ui-button ui-button--secondary" id="btn-photo" data-tip="Extrae el fotograma actual del original 4K">${icon('iso')} Foto 4K</button>
           </div>
           <div class="hud" id="hud"></div>
         </div>
@@ -88,7 +88,7 @@ main.innerHTML = skeleton(2);
           <div class="pb fl-tel-b">
             <div class="chart-wrap" id="ch-alt"></div><p class="fl-alt-note">Altura respecto al despegue. Los valores por debajo se muestran como 0 m.</p>
             ${flatSpeed
-              ? `<div class="fl-flat"><b>Velocidad</b><span>Sin desplazamiento apreciable · máx <span class="mono">${maxSpeed.toFixed(1)} km/h</span></span></div>`
+              ? `<div class="fl-flat"><b>Velocidad</b><span>Sin desplazamiento apreciable · máx <span class="mono">${fmt.number(maxSpeed, 1)} km/h</span></span></div>`
               : '<div class="chart-wrap" id="ch-speed"></div>'}
           </div>
         </div>` : ''}
@@ -103,8 +103,7 @@ main.innerHTML = skeleton(2);
           </div>
           <div class="pb" id="hl-list">
             ${manualHighlights.length ? highlightRows(manualHighlights) : ''}
-            ${suggestedHighlights.length ? `<section><span class="fl-hint">Sugerido</span>${highlightRows(suggestedHighlights)}</section>` : ''}
-            ${!highlights.length ? '<p class="fl-hint">Sin momentos aún. Pausa el video donde quieras y selecciona Marcar aquí.</p>' : ''}
+            ${!manualHighlights.length ? '<p class="fl-hint">Sin momentos aún. Pausa el video donde quieras y selecciona Marcar aquí.</p>' : ''}
           </div>
         </div>
 
@@ -135,7 +134,7 @@ main.innerHTML = skeleton(2);
               <tr><td>Códec</td><td>HEVC 10-bit<br><small>${(meta.size_bytes * 8 / meta.duration_s / 1e6).toFixed(0)} Mbps</small></td></tr>
               <tr><td>Original</td><td>${fmt.gb(meta.size_bytes)}</td></tr>
               ${meta.proxy_bytes ? `<tr><td>Video 1080p</td><td>${fmt.gb(meta.proxy_bytes)}</td></tr>` : ''}
-              <tr><td>Fotogramas</td><td>${Math.round(meta.duration_s * meta.fps).toLocaleString()}</td></tr>
+              <tr><td>Fotogramas</td><td>${fmt.number(Math.round(meta.duration_s * meta.fps))}</td></tr>
               ${pts.length ? `<tr><td>ISO rango</td><td>${Math.min(...pts.map(p => p.iso))} – ${Math.max(...pts.map(p => p.iso))}</td></tr>` : ''}
             </table>
           </div></div>
@@ -152,11 +151,22 @@ main.innerHTML = skeleton(2);
       <div class="fl-side">
         ${pts.length ? '<div class="panel fl-map"><h2 class="ph">Ruta del vuelo</h2><div id="map"></div></div>' : `<div class="fl-no-gps"><h2>${trackFailed ? 'No se pudo cargar el GPS' : 'Sin GPS'}</h2><p>${trackFailed ? 'El video está disponible. Reintenta para recuperar la ruta y la telemetría.' : 'Este video no tiene una ruta registrada.'}</p>${trackFailed ? '<button class="ui-button ui-button--secondary" id="gps-retry">Reintentar GPS</button>' : ''}</div>`}
 
-        <section class="panel fl-ai"><h2 class="ph">Análisis del vuelo</h2><div class="pb"><p class="fl-hint">${aiData ? 'Revisa las observaciones antes de usarlas en una edición.' : 'Sin análisis aún. Solicita el análisis para encontrar momentos y etiquetas.'}</p>${aiData?.quality?.issues?.length ? `<p class="fl-issue">${esc(aiData.quality.issues.join(' · '))}</p>` : ''}${aiData?.tags?.length ? `<div class="fl-tags">${aiData.tags.map(tag => `<a class="ui-chip" href="index.html?q=${encodeURIComponent(tag)}">${esc(tag)}</a>`).join('')}</div>` : ''}<button class="ui-button ui-button--secondary" id="btn-deep">${aiData ? 'Actualizar análisis' : 'Analizar vuelo'}</button><p class="fl-hint" id="analysis-status" role="status"></p></div></section>
+        <section class="panel fl-ai"><h2 class="ph">Análisis del vuelo</h2><div class="pb"><p class="fl-hint">${aiData ? 'Revisa las observaciones antes de usarlas en una edición.' : 'Sin análisis aún. Solicita el análisis para encontrar momentos y etiquetas.'}</p>${aiData?.quality?.issues?.length ? `<p class="fl-issue">${esc(aiData.quality.issues.join(' · '))}</p>` : ''}${aiData?.tags?.length ? `<div class="fl-tags">${aiData.tags.filter(tag => !/^(drone|dron)$/i.test(tag)).map(tag => `<a class="ui-chip" href="index.html?q=${encodeURIComponent(tag)}">${esc(tag)}</a>`).join('')}</div>` : ''}<button class="ui-button ui-button--secondary" id="btn-deep">${aiData ? 'Actualizar análisis' : 'Analizar vuelo'}</button><p class="fl-hint" id="analysis-status" role="status"></p></div></section>
       </div>
     </div>
   </div>
 `;
+  main.querySelector('.fl-video').after(document.getElementById('flight-summary'));
+  main.querySelector('.fl-bar').prepend(main.querySelector('.fl-actions'));
+  for (const panel of main.querySelectorAll('.fl-edits .pb')) {
+    panel.querySelector('.fl-hint')?.remove();
+    const content = suggestedContent(panel.innerHTML); panel.replaceChildren(content);
+  }
+  const analysisParts = [...main.querySelectorAll('.fl-ai .fl-issue, .fl-ai .fl-tags')];
+  if (analysisParts.length) {
+    const analysis = suggestedContent(''); analysisParts[0].before(analysis);
+    analysis.querySelector('.ui-suggested-content').append(...analysisParts);
+  }
   const technical = document.querySelector('.fl-tech');
   const technicalBody = technical.querySelector('.pb');
   technical.remove();
@@ -206,6 +216,12 @@ main.innerHTML = skeleton(2);
   if (SRC.hd || SRC['720'] || SRC['4k']) {
     slot.innerHTML = `<video src="${SRC[resolved()]}" playsinline webkit-playsinline preload="metadata" poster="${DATA}/thumbs/${cid}.jpg"></video>`;
     video = slot.querySelector('video');
+    const player = skinPlayer(video, { label: 'Recorrido del vuelo' });
+    const qualityControl = document.createElement('label'); qualityControl.className = 'fl-quality';
+    qualityControl.innerHTML = `<span class="sr-only">Calidad de video</span><select id="fl-quality" aria-label="Calidad de video"><option value="auto">Auto</option>${meta.has_proxy720 ? '<option value="720">720p</option>' : ''}${meta.has_proxy ? '<option value="hd">1080p</option>' : ''}${meta.raw_rel && hevcOK ? '<option value="4k">4K</option>' : ''}</select>`;
+    player.element.append(qualityControl);
+    qualityControl.querySelector('select').addEventListener('change', e => setQuality(e.target.value));
+    addEventListener('pagehide', () => player.destroy(), { once: true });
   } else {
     // sin fuente reproducible: estado honesto — el thumb + qué falta y por qué
     slot.innerHTML = `
@@ -236,8 +252,8 @@ main.innerHTML = skeleton(2);
   video?.addEventListener('ended', stopViewerPing);
   addEventListener('pagehide', stopViewerPing, { once: true });
   function paintQ() {
-    document.querySelectorAll('#q-seg [data-q]').forEach(b => {
-      b.classList.toggle('on', b.dataset.q === quality); b.setAttribute('aria-pressed', String(b.dataset.q === quality)); });
+    const select = document.getElementById('fl-quality');
+    if (select) select.value = [...select.options].some(option => option.value === quality) ? quality : 'auto';
   }
   let onMeta = null; // guarda contra listeners duplicados si cambian calidad rápido
   function setQuality(k) {
@@ -259,12 +275,7 @@ main.innerHTML = skeleton(2);
     video.load();
   }
   paintQ();
-  document.getElementById('fl-fullscreen').addEventListener('click', () => document.querySelector('.fl-video').requestFullscreen?.());
   video?.addEventListener('error', () => { const status = document.getElementById('fl-media-status'); status.hidden = false; status.textContent = 'No se pudo cargar el video. Prueba otra calidad.'; });
-  document.getElementById('q-seg')?.addEventListener('click', e => {
-    const b = e.target.closest('[data-q]');
-    if (b) setQuality(b.dataset.q);
-  });
 
   // Compartir a Fotos (iOS): Web Share API con archivo — el share sheet ofrece
   // "Guardar video/imagen" directo al carrete; fallback = descarga normal
@@ -388,9 +399,6 @@ main.innerHTML = skeleton(2);
       else { b.disabled = false; b.innerHTML = `${icon('warn')} Error: ${esc(r?.error || 'no se pudo')}`; }
     });
   });
-  document.getElementById('btn-arch').addEventListener('click', async () => {
-    try { await save('/api/clip', { clip_id: cid, archived: !meta.archived }); location.href = 'index.html'; } catch (error) { toast(error.message); }
-  });
 
   // ---- HUD ----
   document.getElementById('hud').hidden = !pts.length;
@@ -403,10 +411,10 @@ main.innerHTML = skeleton(2);
     i = Math.max(0, Math.min(i, pts.length - 1));
     const p = pts[i];
     set('alt', `${Number.isFinite(p.rel_alt) ? Math.max(0, p.rel_alt).toFixed(0) : '—'}<small> m</small>`);
-    set('dist', cum[i] >= 1000 ? `${(cum[i] / 1000).toFixed(2)}<small> km</small>` : `${Math.round(cum[i])}<small> m</small>`);
+    set('dist', figure(fmt.distance(cum[i])));
     set('speed', `${Math.round(speeds[i] || 0)}<small> km/h</small>`);
     set('iso', esc(p.iso));
-    set('shutter', esc(p.shutter));
+    set('shutter', esc(fmt.shutter(p.shutter)));
     // rumbo: bearing hacia el siguiente punto — flecha que gira con el dron
     const q = pts[Math.min(i + 1, pts.length - 1)];
     const brg = bearing(p, q);
@@ -498,12 +506,15 @@ main.innerHTML = skeleton(2);
   if (pts.length) {
     const coords = pts.map(p => [p.lon, p.lat]);
     const map = new maplibregl.Map({
+      ...mapSkinOptions,
       cooperativeGestures: true,                   // mapa mid-page: 1 dedo scrollea la página, 2 mueven el mapa
       container: 'map', style: SAT_STYLE,
       bounds: coords.reduce((bounds, point) => bounds.extend(point), new maplibregl.LngLatBounds()),
-      fitBoundsOptions: FIT_OPTS, attributionControl: { compact: true },
+      fitBoundsOptions: { padding: 36, maxZoom: 18 },
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    const mapSkin = skinMap(map);
+    const resize = new ResizeObserver(() => map.resize()); resize.observe(document.getElementById('map'));
+    addEventListener('pagehide', () => { resize.disconnect(); mapSkin.destroy(); map.remove(); }, { once: true });
     document.addEventListener('ab-theme-change', () => {
       const color = dataColor();
       ['route', 'route-glow'].forEach(layer => { if (map.getLayer(layer)) map.setPaintProperty(layer, 'line-color', color); });
@@ -535,21 +546,11 @@ main.innerHTML = skeleton(2);
   }
 
   // ---- sync + shortcuts ----
-  const scrubber = document.getElementById('fl-seek');
-  const playButton = document.getElementById('fl-play');
   function syncClock() {
     const time = video?.currentTime || 0;
-    scrubber.value = time;
-    scrubber.setAttribute('aria-valuetext', `${fmt.dur(time)} de ${durTxt}`);
-    document.getElementById('fl-clock').textContent = fmt.dur(time);
     showPoint(sampleAt(times, time));
     document.querySelectorAll('#strip .fl-frame').forEach(button => button.classList.toggle('on', Math.floor(time / 2) * 2 === +button.dataset.t));
-    playButton.innerHTML = icon(video && !video.paused ? 'pause' : 'play');
-    playButton.setAttribute('aria-label', video && !video.paused ? 'Pausar' : 'Reproducir');
   }
-  scrubber.disabled = !video; playButton.disabled = !video;
-  scrubber.addEventListener('input', () => seek(+scrubber.value));
-  playButton.addEventListener('click', () => { if (video) video.paused ? video.play().catch(() => {}) : video.pause(); });
   ['timeupdate', 'seeked', 'play', 'pause'].forEach(event => video?.addEventListener(event, syncClock));
   const initialTime = Math.max(0, Number(new URLSearchParams(location.search).get('t')) || 0);
   if (video && initialTime) {
@@ -565,10 +566,33 @@ main.innerHTML = skeleton(2);
         readAI(`/api/clip/${encodeURIComponent(cid)}/insight`),
       ]);
       const insight = detail.insight;
-      region.innerHTML = `<dl><div><dt>Recorrido</dt><dd>${summary.distance_m == null ? '—' : fmt.km(summary.distance_m)}</dd></div><div><dt>Altura máxima</dt><dd>${summary.max_altitude_m == null ? '—' : Math.max(0, Math.round(summary.max_altitude_m)) + ' m'}</dd></div></dl><div><span class="fl-hint">Sugerido</span>${captionView(insight, summary.summary)}${!insight?.caption_short ? '<p class="fl-hint">El resumen aún no está disponible.</p>' : ''}${summary.best_moment ? `<button class="ui-button ui-button--quiet tc" id="fl-best-moment" data-t="${summary.best_moment.time_s}">${icon('play')} Mejor momento · ${fmt.dur(summary.best_moment.time_s)}</button>` : ''}</div>`;
+      region.innerHTML = `<dl><div><dt>Recorrido</dt><dd>${figure(fmt.distance(summary.distance_m))}</dd></div><div><dt>Altura máxima</dt><dd>${figure(fmt.distance(summary.max_altitude_m == null ? null : Math.max(0, summary.max_altitude_m)))}</dd></div></dl>`;
+      const moments = credibleHighlights(insight).filter(h => !manualHighlights.some(m => Math.abs(m.t - h.start) < 1));
+      const best = summary.best_moment;
+      const verifiedBest = best?.selection === 'ai' && best.time_s > 0 && moments.some(h => best.time_s >= h.start && best.time_s < h.end);
+      region.append(suggestedContent(`${captionView(insight, summary.summary)}${!insight?.caption_short ? '<p class="fl-hint">El resumen aún no está disponible.</p>' : ''}${verifiedBest ? `<button class="ui-button ui-button--quiet tc" id="fl-best-moment" data-t="${best.time_s}">${icon('play')} Mejor momento · ${fmt.clock(best.time_s)}</button>` : ''}`));
       const tags = document.querySelector('.fl-ai .fl-tags');
       if (tags && insight) tags.innerHTML = clipChips(insight);
-      if (insight?.highlight_segments?.length) document.getElementById('hl-list').innerHTML = `${highlightRows(manualHighlights)}<section><span class="fl-hint">Sugerido</span>${highlightRows(insight.highlight_segments.map(h => ({ t: h.start, reason: h.reason })))}</section>`;
+      const list = document.getElementById('hl-list');
+      list.innerHTML = highlightRows(manualHighlights);
+      if (moments.length) {
+        const container = document.createElement('div');
+        for (const h of moments) {
+          const key = `ab.moment.dismissed.${cid}.${h.start}`;
+          if (localStorage.getItem(key)) continue;
+          const item = suggestedContent(highlightRows([{ t: h.start, reason: h.reason }]), {
+            onAccept: () => save('/api/highlight', { clip_id: cid, t: h.start, reason: h.reason }),
+            onDismiss: () => { localStorage.setItem(key, '1'); item.querySelector('.ui-suggested-content').hidden = true; },
+          });
+          item.querySelector('.ui-suggested-label').remove();
+          item.setAttribute('aria-label', `Momento a ${fmt.clock(h.start)}`);
+          container.append(item);
+        }
+        if (container.childElementCount) {
+          const section = suggestedContent(''); section.querySelector('.ui-suggested-content').append(container); list.append(section);
+        }
+      }
+      if (!list.childElementCount) list.innerHTML = '<p class="fl-hint">Sin momentos confirmados. Pausa el video y selecciona Marcar aquí.</p>';
     } catch {
       region.innerHTML = '<p class="fl-hint">No se pudo cargar el resumen. <button class="ui-button ui-button--quiet">Reintentar</button></p>';
       region.querySelector('button').addEventListener('click', loadSummary);
