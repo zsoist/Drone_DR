@@ -1,9 +1,9 @@
-import { fmt } from './ui/format.js?v=415';
-import { term } from './ui/terms.js?v=415';
-import { Suggested } from './ui/suggested.js?v=415';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=415';
-import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=422';
-import { coverageRows } from './scene-improve-state.js?v=422';
+import { fmt } from './ui/format.js?v=423';
+import { term } from './ui/terms.js?v=423';
+import { Suggested } from './ui/suggested.js?v=423';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=423';
+import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=423';
+import { coverageRows } from './scene-improve-state.js?v=423';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,

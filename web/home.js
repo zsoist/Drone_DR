@@ -1,6 +1,6 @@
-import { fmt } from './ui/format.js?v=418';
-import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=418';
-import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=418';
+import { fmt } from './ui/format.js?v=423';
+import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=423';
+import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=423';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;

@@ -1,7 +1,7 @@
-import { fmt } from './ui/format.js?v=418';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=418';
-import { readAI, loadInsights, clipChips, bestCover, flightCaption, credibleHighlights } from './home.ai.js?v=418';
-import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=418';
+import { fmt } from './ui/format.js?v=423';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=423';
+import { readAI, loadInsights, clipChips, bestCover, flightCaption, credibleHighlights } from './home.ai.js?v=423';
+import { loadFlights, registerFlights, registerPaletteSource, frameFor, skeleton, renderFailure, openPageSheet, save, dataColor, figure, suggestedContent } from './home-shared.js?v=423';
 const main = renderShell('trips.html');
 main.classList.add('tr-page', 'ab-page');
 const CITIES = [

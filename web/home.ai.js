@@ -1,5 +1,5 @@
-import { frameFor } from './home-shared.js?v=418';
-import { fmt } from './ui/format.js?v=418';
+import { frameFor } from './home-shared.js?v=423';
+import { fmt } from './ui/format.js?v=423';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
 export function credibleHighlights(insight) {

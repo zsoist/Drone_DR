@@ -6,12 +6,12 @@
 // Con ?fv=2: inicio validado contra colisión (≥ 12 m de muros, 30 m libres al frente),
 // par por mundo/dificultad, medallas bronce/plata/oro, fallos, penalización de +3 s por
 // respawn, récords top-10 por (mundo, modo, dificultad) y fantasma de la mejor run.
-import { MODES, STEP } from '/flightverse/runtime.js?v=416';
-import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=416';
+import { MODES, STEP } from '/flightverse/runtime.js?v=423';
+import { createGateRush, bestTime } from '/flightverse/gaterush.js?v=423';
 import {
   addRecord, getTop, bestMedal, encodeGhost, ghostKey, saveGhostIfBest, loadGhost, timeText,
-} from '/flightverse/modes/rules.js?v=416';
-import { decorateGateRushResult } from '/flightverse/modes/result-cards.js?v=416';
+} from '/flightverse/modes/rules.js?v=423';
+import { decorateGateRushResult } from '/flightverse/modes/result-cards.js?v=423';
 
 const GHOST_PREF = 'ab_fv_gr_ghost';
 
