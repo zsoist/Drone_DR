@@ -87,8 +87,8 @@ Write label text in sentence case. Do not use uppercase mono labels.
 Use `.ab-page` on the main element from `renderShell()` for new page layouts.
 Use `.ab-page--wide` with `.ab-page` for editors that need more space.
 All app pages use these classes.
-Login places the form beside a CSS cover on desktop.
-The phone form uses the same cover as its background.
+Login places the form beside an embedded archive cover on desktop.
+The phone layout centers the form on a solid surface, with equal space above and below.
 
 | Token or class | Contract |
 |---|---|
@@ -177,7 +177,9 @@ Clip results keep the server order, even without a literal text match.
 
 Each clip shows `caption_short` and stored match evidence.
 Matched tags or caption text explain literal matches.
-Semantic results show a stored description or tags. Results without evidence stay hidden.
+Semantic results explain the match with stored tags or a short caption. Results without evidence stay hidden.
+Owner titles take priority over captions. Highlight labels never supply search titles.
+
 The source adds dates from the flight manifest and place names from collections.
 It never shows coordinates as place names.
 
@@ -185,7 +187,8 @@ A zero or absent matched time does not appear as a highlight.
 
 Clip previews use the filtered `cover` from GET `/api/clip/<clip_id>/insight`.
 The shared server filter rejects text, people, quality flags, and dark frames.
-Only covers with `quality.eligible: true` appear. An absent or failed cover uses the clip icon.
+Automatic covers need `quality.status: "ok"`. Owner selections bypass this filter.
+An absent or failed cover uses the clip icon.
 
 Covers remain cached for the page session. Failed requests can retry with another query.
 The preview represents the clip. The link still opens the matched time.

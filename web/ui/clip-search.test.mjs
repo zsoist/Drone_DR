@@ -34,7 +34,7 @@ test('server matches retain short captions, moment URLs, order, and an in-memory
   assert.equal(items[0].queryMatch, true);
   assert.equal(items[0].hint, 'Lugar sin identificar · a los 0:10');
   assert.equal(items[0].href, 'flight.html?id=DJI_test&t=10.5');
-  assert.equal(items[0].thumbnail, '/data/thumbs/DJI_test.jpg');
+  assert.equal(items[0].thumbnail, '');
   assert.deepEqual(await query(source, ' ATARDECER '), items);
   assert.equal(calls, 1);
 });
@@ -100,7 +100,7 @@ test('search explains tags, captions and honest semantic matches with date/place
   const { matchEvidence } = await import('./clip-search.js');
   assert.equal(matchEvidence({ tags: ['Atardecer', 'Bosque'] }, 'atardecer'), 'Etiqueta: Atardecer');
   assert.equal(matchEvidence({ caption: 'Árboles junto al río' }, 'rio'), 'Árboles junto al río');
-  assert.equal(matchEvidence({ caption: 'Árboles' }, 'puesta del sol'), 'Descripción: Árboles');
+  assert.equal(matchEvidence({ caption: 'Árboles' }, 'puesta del sol'), 'Relacionado por descripción: Árboles');
   t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ results: [{ ...fixture.results[0], tags: ['Atardecer'], matched_moment: null }] }) }));
   const source = createClipSearchSource({ loadContext: async () => [{ clip_id: 'DJI_test', date: '2026-07-24', place: 'Bogotá' }] });
   const [item] = await query(source, 'atardecer');
@@ -112,21 +112,23 @@ test('search explains tags, captions and honest semantic matches with date/place
 
 test('semantic evidence uses stored captions or tags and never invents a match', async () => {
   const { matchEvidence } = await import('./clip-search.js');
-  assert.equal(matchEvidence({ caption: '   ', caption_short: 'Luz cálida sobre la ciudad' }, 'atardecer'), 'Descripción: Luz cálida sobre la ciudad');
-  assert.equal(matchEvidence({ tags: ['Luz cálida', 'Ciudad'] }, 'atardecer'), 'Etiquetas: Luz cálida · Ciudad');
+  assert.equal(matchEvidence({ caption: '   ', caption_short: 'Luz cálida sobre la ciudad' }, 'atardecer'), 'Relacionado por descripción: Luz cálida sobre la ciudad');
+  assert.equal(matchEvidence({ tags: ['Luz cálida', 'Ciudad'] }, 'atardecer'), 'Relacionado por etiquetas: Luz cálida · Ciudad');
   assert.equal(matchEvidence({}, 'atardecer'), '');
   const text = matchEvidence({ caption: 'Ciudad '.repeat(40) }, 'atardecer');
   assert.ok(text.length <= 194);
   assert.ok(text.endsWith('…'));
 });
 
-test('search uses the archive thumbnail field independently of featured approval', async t => {
-  for (const thumbnail_url of [null, '/data/thumbs/DJI_test.jpg', '/data/frames/DJI_test/f_0003.jpg']) {
+test('automatic search previews require backend frame approval', async t => {
+  for (const quality of [null, {status:'rejected'}, {status:'ok'}]) {
+    const frame_url = '/data/frames/DJI_test/f_0003.jpg';
     t.mock.method(globalThis, 'fetch', async url => ({ok:true, json:async()=>
-      url.startsWith('/api/search?') ? fixture : {clip_id:'DJI_test', thumbnail_url, cover:null}}));
+      url.startsWith('/api/search?') ? {...fixture, results:[{...fixture.results[0], thumbnail_url:frame_url}]}
+        : {clip_id:'DJI_test', thumbnail_url:frame_url, cover:{frame_url, quality}}}));
     const source = createSource({loadContext:async()=>[]});
     const [item] = await query(source, 'atardecer');
-    assert.equal(item.thumbnail, thumbnail_url || '/data/thumbs/DJI_test.jpg');
+    assert.equal(item.thumbnail, quality?.status === 'ok' ? frame_url : '');
     assert.equal(item.href, 'flight.html?id=DJI_test&t=10.5');
     t.mock.restoreAll();
   }
@@ -139,9 +141,27 @@ test('cover failures preserve results and retry; aborts do not cache cover work'
     if (++calls === 1) throw new Error('offline');
     return '/data/frames/DJI_test/f_0003.jpg';
   } });
-  assert.equal((await query(source, 'atardecer'))[0].thumbnail, '/data/thumbs/DJI_test.jpg');
+  assert.equal((await query(source, 'atardecer'))[0].thumbnail, '');
   assert.equal((await query(source, 'ciudad'))[0].thumbnail, '/data/frames/DJI_test/f_0003.jpg');
   const controller = new AbortController();
   const aborted = createClipSearchSource({ loadContext: async () => [], loadCover: async () => { controller.abort(); return ''; } });
   await assert.rejects(query(aborted, 'río', controller), { name: 'AbortError' });
+});
+
+
+test('owner titles win and semantic evidence stays short', async t => {
+  t.mock.method(globalThis, 'fetch', async () => ({ok:true, json:async()=>fixture}));
+  const source = createClipSearchSource({loadContext:async()=>[{clip_id:'DJI_test', title:'Mi recorrido'}]});
+  const [item] = await query(source, 'atardecer');
+  assert.equal(item.label, 'Mi recorrido');
+  assert.equal(item.matchText, 'Relacionado por descripción: Río entre montañas');
+  assert.ok(!item.matchText.includes('Full caption'));
+});
+
+test('owner cover selections stay visible without automatic approval', async t => {
+  const frame_url = '/data/frames/DJI_test/f_0003.jpg';
+  t.mock.method(globalThis, 'fetch', async url => ({ok:true, json:async()=>
+    url.startsWith('/api/search?') ? fixture : {cover:{frame_url, selection:'owner'}}}));
+  const [item] = await query(createSource({loadContext:async()=>[]}), 'atardecer');
+  assert.equal(item.thumbnail, frame_url);
 });
