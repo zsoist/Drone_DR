@@ -14,8 +14,8 @@
       position: 'relative', isolation: 'isolate', overflow: 'hidden',
       minHeight: '100dvh', display: 'grid',
       gridTemplateColumns: desktop ? '1fr 1fr' : '1fr',
-      placeItems: desktop ? 'center' : 'end center', gap: desktop ? '64px' : '0',
-      padding: desktop ? '28px 22px' : 'max(56px, calc(env(safe-area-inset-top) + 36px)) max(22px, env(safe-area-inset-right)) max(72px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left))',
+      placeItems: 'center', gap: desktop ? '64px' : '0',
+      padding: desktop ? '28px 22px' : 'max(28px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left))',
       background: 'var(--bg)',
     });
     cover.hidden = !desktop;

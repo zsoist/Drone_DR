@@ -1,5 +1,4 @@
-import { Suggested } from './ui/suggested.js?v=434';
-import { approvedFrame } from './p.logic.js?v=434';
+import { approvedFrame } from './p.logic.js?v=437';
 const main = renderShell('guia.html');
 main.classList.add('ab-page', 'gd-page');
 const guides = [
@@ -32,7 +31,7 @@ async function loadGuideFrames() {
       const image=document.createElement('img'); image.src=frame.frame_url;
       image.alt='Vista aérea del archivo'; image.loading=index ? 'lazy' : 'eager';
       image.addEventListener('error',()=>{slot.textContent='No se pudo cargar la imagen.';},{once:true});
-      slot.replaceChildren(Suggested({content:image})); slot.setAttribute('aria-busy','false');
+      slot.replaceChildren(image); slot.setAttribute('aria-busy','false');
     });
   } catch { slots.forEach(slot=>{slot.textContent='No se pudieron cargar las imágenes del archivo.';slot.setAttribute('aria-busy','false');}); }
 }
