@@ -175,10 +175,21 @@ The source waits 200 ms and cancels the previous request when the query changes.
 It caches up to 64 completed queries in memory for the page session.
 Clip results keep the server order, even without a literal text match.
 
-Each clip shows its thumbnail, `caption_short`, and match evidence.
-Matched tags or caption text explain lexical results. Related content is labeled without an invented match.
-The source adds dates and places from the flight manifest. GPS coordinates supply context when no place name exists.
+Each clip shows `caption_short` and stored match evidence.
+Matched tags or caption text explain literal matches.
+Semantic results show a stored description or tags. Results without evidence stay hidden.
+The source adds dates from the flight manifest and place names from collections.
+It never shows coordinates as place names.
+
 A zero or absent matched time does not appear as a highlight.
+
+Clip previews use the filtered `cover` from GET `/api/clip/<clip_id>/insight`.
+The shared server filter rejects text, people, quality flags, and dark frames.
+Only covers with `quality.eligible: true` appear. An absent or failed cover uses the clip icon.
+
+Covers remain cached for the page session. Failed requests can retry with another query.
+The preview represents the clip. The link still opens the matched time.
+Never use an unchecked matched frame or thumbnail.
 
 Query-specific results replace duplicate entries from the local index.
 

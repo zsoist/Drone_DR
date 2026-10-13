@@ -5,8 +5,8 @@
  * Optional thumbnail and suggested fields add media and one group disclosure.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import './format.js?v=423';
-import { createSheet } from './sheet.js?v=423';
+import './format.js?v=425';
+import { createSheet } from './sheet.js?v=425';
 // Pages can retain older version queries during a scoped asset bump.
 // Share registrations across module URLs so their sources still reach the shell.
 const registryKey = Symbol.for('aerobrain.palette.sources');
@@ -151,6 +151,7 @@ export function mountPalette(items = []) {
         for (const item of entries) {
           const i = matches.length; matches.push(item);
           const row = document.createElement('div'); row.className = 'ui-palette-result';
+          row.classList.toggle('ui-palette-result--clip', groupOf(item) === 'Clips');
           row.id = `ui-palette-option-${i}`; row.setAttribute('role', 'option');
           if (item.thumbnail && destination(item.thumbnail)) {
             const thumbnail = document.createElement('img'); thumbnail.className = 'ui-palette-thumb';
@@ -164,7 +165,9 @@ export function mountPalette(items = []) {
           copy.append(highlightedLabel(item.label, query));
           const evidence = item.matchText || (query && !Number.isFinite(fuzzyScore(query, item.label)) && item.keywords);
           if (evidence) {
-            const reason = highlightedLabel(String(evidence), query); reason.className = 'ui-palette-evidence'; copy.append(reason);
+            const text = String(evidence);
+            const reason = highlightedLabel(text, normalize(text).includes(normalize(query)) ? query : '');
+            reason.className = 'ui-palette-evidence'; copy.append(reason);
           }
           if (hint.textContent) copy.append(hint);
           row.append(copy);

@@ -167,6 +167,7 @@ button.ui-chip, a.ui-chip { min-height: 44px; min-width: 44px; cursor: pointer; 
 .ui-palette-group-label { margin: 20px 12px 8px; font: 500 13px/1.45 var(--font); letter-spacing: var(--tr-eyebrow); color: var(--text-2); }
 .ui-palette-group:first-child .ui-palette-group-label { margin-top: 4px; }
 .ui-palette-result > svg { width: 22px; height: 22px; flex: none; color: var(--text-2); }
+.ui-palette-result--clip > svg { width: 88px; }
 .ui-palette-copy { min-width: 0; display: grid; gap: 2px; }
 .ui-palette-copy > span { overflow-wrap: anywhere; }
 .ui-palette-copy small { font-size: 12px; color: var(--text-2); }
