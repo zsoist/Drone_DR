@@ -1,9 +1,12 @@
-import { originalInputs } from './scene-improve-state.js?v=402';
-import { sceneTitle, areaNav } from './scene-improve-ui.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { term } from './ui/terms.js?v=402';
+import { originalInputs } from './scene-improve-state.js?v=414';
+import { sceneTitle, areaNav } from './scene-improve-ui.js?v=414';
 /* global renderShell, pageHead, getFlights, authFetch, api, fmt, icon, haversine, SceneImprovePolicy */
 
 const root = document.getElementById('scene-improve-root');
 const shellMain = renderShell('tresd.html');
+shellMain.classList.add('ab-page', 'ab-page--wide');
 shellMain.append(root);
 
 const {
@@ -78,7 +81,7 @@ function photoSetRow(source, { selected = false, locked = false } = {}) {
     ${thumb}
     <span class="si-capture-copy">
       <span class="si-capture-title"><b>${esc(sourceLabel(source.id))}</b><span class="si-role">Fotos</span></span>
-      <span class="si-evidence mono">${esc(evidence)}</span>
+      <span class="si-evidence">${esc(evidence)}</span>
     </span>
   </label>`;
 }
@@ -91,9 +94,9 @@ function captureRow(candidate, { selected = false, locked = false } = {}) {
   const flight = candidate.flight || {};
   const score = Math.round(Math.max(finite(suitability.mesh) || 0, finite(suitability.splat) || 0) * 10);
   const evidence = [
-    `${fmt.dur(candidate.durationS)} video`,
+    `${fmt.duration(candidate.durationS)} video`,
     Number.isFinite(candidate.distanceM) ? `${Math.round(candidate.distanceM)} m del sitio` : 'GPS no medible',
-    Number.isFinite(candidate.altitudeM) ? `${Math.round(candidate.altitudeM)} m AGL` : null,
+    Number.isFinite(candidate.altitudeM) ? `${Math.round(candidate.altitudeM)} m de altura` : null,
     !locked && score ? `aporte 3D ${score}` : null,
   ].filter(Boolean).join(' · ');
   return `<label class="si-capture${selected ? ' is-selected' : ''}${classification.weak ? ' is-weak' : ''}${locked ? ' is-locked' : ''}">
@@ -102,7 +105,7 @@ function captureRow(candidate, { selected = false, locked = false } = {}) {
     <span class="si-capture-copy">
       <span class="si-capture-title"><b>${esc(dateLabel(flight))}</b>
         <span class="si-role">${esc(classification.role)}</span></span>
-      <span class="si-evidence mono">${esc(evidence)}</span>
+      <span class="si-evidence">${esc(evidence)}</span>
       ${locked ? '' : `<span class="si-reason">${esc(classification.reasons[0] || 'Captura compatible del mismo sitio.')}</span>`}
     </span>
   </label>`;
@@ -124,16 +127,16 @@ function updateReview() {
     const sets = validation.totals.photoSets || 0;
     node.textContent = sets ? `${validation.totals.sources - sets} + ${sets} fotos` : validation.totals.sources;
   });
-  document.querySelectorAll('[data-si-duration]').forEach(node => { node.textContent = fmt.dur(validation.totals.durationS); });
+  document.querySelectorAll('[data-si-duration]').forEach(node => { node.textContent = fmt.duration(validation.totals.durationS); });
   document.querySelectorAll('[data-si-roles]').forEach(roleNode => { roleNode.innerHTML = roles.length
     ? roles.map(role => `<span>${esc(role)}</span>`).join('')
     : '<span>Selecciona al menos una captura nueva</span>'; });
   const preset = document.getElementById('si-splat-preset');
   const label = document.getElementById('si-splat-summary');
-  if (label && preset) label.textContent = document.getElementById('si-then-splat').checked ? `Splat · ${preset.selectedOptions[0].textContent}` : 'Sin splat';
+  if (label && preset) label.textContent = document.getElementById('si-then-splat').checked ? `${term('splat')} · ${preset.selectedOptions[0].textContent}` : 'Sin escena fotorrealista';
   const odm = document.getElementById('si-preset');
   const odmLabel = document.getElementById('si-odm-summary');
-  if (odmLabel && odm) odmLabel.textContent = `Fotogrametría · ${odm.selectedOptions[0].textContent}`;
+  if (odmLabel && odm) odmLabel.textContent = `${term('mesh')} · ${odm.selectedOptions[0].textContent}`;
   const error = state.error || validation.errors[0] || (!additions.length ? 'Añade una captura nueva para crear otra versión.' : '');
   const status = document.getElementById('si-action-status');
   if (status) status.textContent = error;
@@ -172,7 +175,7 @@ function renderWorkspace() {
   root.className = 'si-workspace';
   root.setAttribute('aria-busy', 'false');
   root.innerHTML = `
-    ${areaNav('escenas')}<a class="si-back" href="tresd.html?project=${encodeURIComponent(modelId)}">${icon('chevL')} Volver a 3D</a>
+    ${shell.backLink('Escenas', '/tresd.html')}
     ${pageHead(`Mejorar ${esc(sceneTitle(model.title || 'esta escena'))}`,
       'Añade tomas del mismo lugar. Conserva la versión actual hasta revisar el resultado.',
       `<span class="chip ok">${icon('check')} Versión actual protegida</span>`)}
@@ -184,7 +187,7 @@ function renderWorkspace() {
           <div class="si-base-card">
             <img src="${modelThumb(model)}" alt="Ortofoto actual de ${esc(sceneTitle(model.title || 'la escena'))}">
             <div><h3>${esc(sceneTitle(model.title || model.clip_id))}</h3>
-              <p class="mono">${q.cameras_reconstructed ?? '—'} cámaras · ${q.gsd_cm_px ?? '—'} cm/px · ${q.area_m2 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : 'área no medida'}</p>
+              <p>${q.cameras_reconstructed ?? '—'} cámaras · ${fmt.number(q.gsd_cm_px,1)} cm/px · ${q.area_m2 ? fmt.area(q.area_m2 / 10000) : 'área no medida'}</p>
               <p>Podrás comparar ambas versiones antes de elegir.</p></div>
           </div>
           <div class="si-current"><h3>Capturas actuales${state.basePhotos.length ? ` · ${state.basePhotos.length} fotos conservadas` : ''}</h3><div class="si-capture-list">${currentRows}</div></div>
@@ -207,18 +210,18 @@ function renderWorkspace() {
           <div class="si-step"><span>03</span><div><h2 id="si-build-title">Reconstrucción</h2>
             <p>Reconstruye la escena con todas las capturas seleccionadas.</p></div></div>
           <div class="si-build-choice">
-            <span>${icon('cube')}</span><div><b id="si-odm-summary">Fotogrametría · Extra 3D</b><small>Malla volumétrica de edificio, nube, DSM, ortofoto y texturas.</small></div><em>Recomendado</em>
+            <span>${icon('cube')}</span><div><b id="si-odm-summary">Modelo 3D · Edificios</b><small>Volumen del edificio, elevación del terreno y foto aérea.</small></div><em>Recomendado</em>
           </div>
           <div class="si-build-choice">
-            <span>${icon('layers')}</span><div><b id="si-splat-summary">Splat · Equilibrado (MCMC 1M)</b><small>Conserva la calidad elegida durante todo el proceso.</small></div>
+            <span>${icon('layers')}</span><div><b id="si-splat-summary">Escena fotorrealista · Equilibrada</b><small>Conserva la calidad elegida durante todo el proceso.</small></div>
           </div>
           <details class="si-advanced">
             <summary>Ajustes avanzados</summary>
             <div class="si-settings">
-              <label>Calidad del modelo<select class="ctl" id="si-preset"><option value="extra">Extra 3D · edificio</option><option value="alta">Alta · nube/DSM</option><option value="estandar">Estándar</option><option value="rapido">Rápida</option><option value="ultra">Ultra 3D</option></select></label>
-              <label>Splat<select class="ctl" id="si-splat-preset"><option value="mcmc1m">Equilibrado (MCMC 1M)</option><option value="mcmc3m">Calidad (MCMC 3M · experimental)</option><option value="grandmaster">Grandmaster 40K</option><option value="frontier">Frontier 30K</option><option value="ultra20">Ultra+ 20K</option><option value="ultra">Ultra 15K</option></select></label>
+              <label>Calidad del modelo<select class="ctl" id="si-preset"><option value="extra">Extra 3D · edificio</option><option value="alta">Alta · puntos y relieve</option><option value="estandar">Estándar</option><option value="rapido">Rápida</option><option value="ultra">Ultra 3D</option></select></label>
+              <label>Escena fotorrealista<select class="ctl" id="si-splat-preset"><option value="mcmc1m">Equilibrada</option><option value="mcmc3m">Mayor detalle (experimental)</option><option value="grandmaster">${term('grandmaster')}</option><option value="frontier">${term('frontier')}</option><option value="ultra20">${term('ultra20')}</option><option value="ultra">${term('ultra')}</option></select></label>
               <label>Resolución<select class="ctl" id="si-resolution"><option value="auto">Automática según memoria disponible</option><option value="full">Solo completa</option><option value="half">Media resolución</option></select></label>
-              <label class="si-check"><input type="checkbox" id="si-then-splat" checked> Generar splat después del modelo</label>
+              <label class="si-check"><input type="checkbox" id="si-then-splat" checked> Generar escena fotorrealista después del modelo</label>
             </div>
           </details>
         </section>
@@ -297,7 +300,7 @@ function renderSuccess(result) {
     <span class="si-success-icon">${icon('check')}</span>
     <span class="eyebrow">VERSIÓN EN COLA</span>
     <h1>La escena actual sigue intacta.</h1>
-    <p>La nueva reconstrucción combinará <b>${result.sources}</b> videos. Cuando termine podrás comparar registro, malla y Splat antes de promoverla.</p>
+    <p>La nueva reconstrucción combinará <b>${result.sources}</b> videos. Cuando termine podrás comparar las vistas antes de elegir la nueva versión.</p>
     <div class="si-success-facts"><span><small>Trabajo</small><b class="mono">${esc(result.job)}</b></span>
       <span><small>Reconstrucción</small><b class="mono">${esc(result.reconstruction)}</b></span></div>
     <div class="si-success-actions"><a class="ui-button ui-button--primary" href="tresd.html?tab=jobs&job=${encodeURIComponent(result.job)}">${icon('activity')} Ver procesamiento</a>

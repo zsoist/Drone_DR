@@ -1,17 +1,20 @@
-import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion } from './scene-improve-ui.js?v=402';
-import { coverageRows } from './scene-improve-state.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { term } from './ui/terms.js?v=402';
+import { Suggested } from './ui/suggested.js?v=402';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=402';
+import { sceneTitle, sceneSources, sceneInsight, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=414';
+import { coverageRows } from './scene-improve-state.js?v=414';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
 // transición de carga de consola. 60fps: solo transform/opacity.
-const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return m ? `${+m[3]} ${MESES[+m[2]-1]} ${m[1]}` : ''; };
-const dur = s => { s = Math.round(s||0); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+const fechaDe = cid => { const m = /(\d{4})(\d{2})(\d{2})/.exec(cid||''); return m ? fmt.date(`${m[1]}-${m[2]}-${m[3]}`) : ''; };
+const dur = fmt.duration;
 // guion no separable en rangos ("18-65m" nunca parte en el guion)
 const nbh = t => String(t).replace(/(\d)-(?=\d)/g, '$1\u2011');
 const MISSIONS = {
-  libre: { label: 'Vuelo libre', sub: 'Explora sin límites', extra: '' },
-  gaterush: { label: 'Gate Rush', sub: 'Aros sobre tu ruta real', extra: '&reto=1' },
+  libre: { label: 'Vuelo libre', sub: '', extra: '' },
+  gaterush: { label: term('gateRush'), sub: 'Aros sobre tu ruta real', extra: '&reto=1' },
   cine: { label: 'Cinemático', sub: 'Tour orbital automático', extra: '&modo=cinematico' },
 };
 const best = cid => { try { const t = parseFloat(localStorage.getItem(`ab.fv.best.${cid}.gaterush`)); return Number.isFinite(t) ? t : null; } catch { return null; } };
@@ -87,7 +90,7 @@ function loadMapLibre() {
       link.href = 'vendor/maplibre-gl.css';
       link.addEventListener('load', resolve, { once: true });
       link.addEventListener('error', () => reject(new Error('MapLibre CSS no cargó')), { once: true });
-      document.head.append(link);
+      document.head.insertBefore(link, document.querySelector('link[href*="shell.css"]'));
     }),
     new Promise((resolve, reject) => {
       const existing = document.getElementById('fv-maplibre-js');
@@ -114,16 +117,15 @@ function isla(sc, i) {
   const rec = best(sc.clip_id);
   return `
   <article class="wi ${c.terrain?'':'off'}" data-i="${i}" style="--d:${i*70}ms"
-    role="button" tabindex="0" aria-pressed="false"
-    aria-label="Seleccionar ${esc(sceneTitle(sc.name))}">
-    <div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.assets?.poster||'')}" data-transition-key="world-${esc(sc.clip_id)}"></div>
+>
+    <a class="wi-open" href="share.html?m=${encodeURIComponent(sc.clip_id)}" aria-label="Explorar ${esc(sceneTitle(sc.displayName || sc.name))}"><div class="wi-poster" data-ini="${esc(([...String(sc.name||'').trim()][0]||'·').toUpperCase())}" data-preview="${esc(sc.assets?.poster||'')}" data-transition-key="world-${esc(sc.clip_id)}"></div></a>
 
 
-    ${c.splat?'<span class="wi-badge">Splat</span>':c.mesh?'<span class="wi-badge mesh">Malla</span>':''}
-    ${rec!=null?`<span class="wi-rec">${I.trophy} ${rec.toFixed(1)}s</span>`:''}
+
+    ${rec!=null?`<span class="wi-rec">${I.trophy} ${fmt.number(rec,1)}s</span>`:''}
     <div class="wi-body">
-      <div class="wi-name">${nbh(esc(sceneTitle(sc.name)))}</div>
-      <div class="wi-meta">${fechaDe(sceneSources(sc)[0])?`<span>${fechaDe(sceneSources(sc)[0])}</span>`:''}${sc.world?.size_m?`<span>${(sc.world.size_m[0]*sc.world.size_m[1]/10000).toLocaleString('es-CO',{maximumFractionDigits:1})} ha</span>`:''}</div>
+      <div class="wi-heading"><a class="wi-name" href="share.html?m=${encodeURIComponent(sc.clip_id)}">${nbh(esc(sceneTitle(sc.displayName || sc.name)))}</a><button class="ui-button ui-button--quiet" data-world-detail="${i}" aria-label="Detalles de ${esc(sceneTitle(sc.displayName || sc.name))}">${icon('more')}</button></div>
+      <div class="wi-meta">${fechaDe(sceneSources(sc)[0])?`<span>${fechaDe(sceneSources(sc)[0])}</span>`:''}${sc.world?.size_m?`<span>${fmt.area(sc.world.size_m[0]*sc.world.size_m[1]/10000)}</span>`:''}</div>
       <p class="wi-description" aria-busy="${!descriptions.has(sc.clip_id)}">${descriptions.has(sc.clip_id)?esc(descriptions.get(sc.clip_id)?.caption_short || (descriptions.get(sc.clip_id)?.error?'Descripción no disponible.':'')):'<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>'}</p>
     </div>
   </article>`;
@@ -134,7 +136,7 @@ function pick(i) {
   document.querySelectorAll('.wi').forEach(el => {
     const selected = +el.dataset.i === i;
     el.classList.toggle('sel', selected);
-    el.setAttribute('aria-pressed', String(selected));
+
     if (selected) hydratePreview(el);
   });
   const c = sel.capabilities||{}, st = sel.stats||{}, w = sel.world||{};
@@ -148,21 +150,18 @@ function pick(i) {
   p.innerHTML = c.terrain ? `
     <div class="wp-in">
       <div>
-        <div class="wp-name">${nbh(esc(sceneTitle(sel.name)))}</div>
-        <p class="wp-description">${esc(descriptions.get(sel.clip_id)?.caption_short || '')}</p><div class="wp-chips">
+        <div class="wp-name">${nbh(esc(sceneTitle(sel.displayName || sel.name)))}</div>
+        <div class="wp-description"></div><div class="wp-chips">
           ${site.scene_id?`<span class="fv-chip on">sitio estable · ${site.version_count||1} versiones</span>`:''}
           ${site.source_count?`<span class="fv-chip">${integrated}/${site.source_count} videos integrados</span>`:''}
           ${coverage.length?`<span class="fv-chip">cobertura lista ${readyCoverage.length?readyCoverage.join(' / ')+' m':'pendiente'}</span>`:''}
           ${c.splat?`<span class="fv-chip on">splat ${st.splat_cameras||''} cams</span>`:''}
-          ${rec!=null?`<span class="fv-chip on">récord ${rec.toFixed(2)}s</span>`:''}
+          ${rec!=null?`<span class="fv-chip on">récord ${fmt.number(rec,2)}s</span>`:''}
         </div>
         <div class="wp-data">
-          ${w.size_m?`<div><b>${(w.size_m[0]*w.size_m[1]/10000).toFixed(1)}</b><span>hectáreas</span></div>`:''}
-          ${w.elev_max?`<div><b>${(w.elev_max-w.elev_min).toFixed(0)} m</b><span>desnivel</span></div>`:''}
-          ${st.gsd_cm_px?`<div><b>${st.gsd_cm_px}</b><span>cm/px</span></div>`:''}
-          ${st.track_distance_m?`<div><b>${(st.track_distance_m/1000).toFixed(2)} km</b><span>vuelo real</span></div>`:''}
-          ${st.cloud_points?`<div><b>${(st.cloud_points/1e6).toFixed(1)}M</b><span>puntos</span></div>`:''}
-          ${sel.quality?.splat_bytes?`<div><b>${(sel.quality.splat_bytes/1048576).toFixed(0)} MB</b><span>splat</span></div>`:''}
+          ${w.size_m?`<div><b><span class="ui-figure">${fmt.number(w.size_m[0]*w.size_m[1]/10000,1)}</span> <span class="ui-unit">ha</span></b><span>Superficie</span></div>`:''}
+          ${w.elev_max?`<div><b><span class="ui-figure">${fmt.number(w.elev_max-w.elev_min)}</span> <span class="ui-unit">m</span></b><span>Desnivel</span></div>`:''}
+          ${st.track_distance_m?`<div><b>${fmt.distance(st.track_distance_m)}</b><span>Recorrido grabado</span></div>`:''}
         </div>
       </div>
       <div class="wp-cfg" id="wp-cfg" hidden>
@@ -178,15 +177,17 @@ function pick(i) {
           <button data-v="circle">Círculo</button><button data-v="square">Cuadrado</button></div>`:''}
       </div>
       <div class="wp-go"><div class="scene-actions"><a class="ui-button ui-button--primary" href="share.html?m=${encodeURIComponent(sel.clip_id)}">Explorar escena</a><button class="ui-button ui-button--secondary" data-world-info>Información</button><button class="ui-button ui-button--quiet" data-world-settings>Ajustes de vuelo</button></div>
-        <div class="seg wp-modes" id="wp-modes" role="group" aria-label="Misión">
+        <div class="ui-segmented wp-modes" id="wp-modes" role="group" aria-label="Misión">
           ${Object.entries(MISSIONS).map(([k, m]) => `<button type="button" data-mis="${k}" aria-pressed="${k===cfg.mision}" class="${k===cfg.mision?'on':''}">${I[k]} ${m.label}</button>`).join('')}
         </div>
-        <p class="wp-mis-sub">${cfg.mision==='gaterush'&&rec!=null?`Bate tu ${rec.toFixed(1)}s`:mis.sub}</p>
+        <p class="wp-mis-sub">${cfg.mision==='gaterush'&&rec!=null?`Bate tu ${fmt.number(rec,1)}s`:mis.sub}</p>
         <button class="ui-button ui-button--secondary wp-fly" data-go="${goUrl}">${I.plane} Volar</button>
       </div>
-    </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sceneTitle(sel.name)))}</div>
+    </div>` : `<div class="wp-in"><div class="wp-name">${nbh(esc(sceneTitle(sel.displayName || sel.name)))}</div>
       <a class="btn" href="tresd.html">Procesar en Estudio 3D</a></div>`;
   p.classList.add('show');
+  const insight = descriptions.get(sel.clip_id);
+  if(insight?.caption_short) p.querySelector('.wp-description')?.append(suggestionBlock({title:'',text:insight.caption_short,fullText:insight.caption}));
   p.querySelectorAll('.wp-cfg-g').forEach(g => {
     const k = g.dataset.k;
     const selected = k === 'cobertura' ? effectiveCoverageChoice(sel) : cfg[k];
@@ -208,19 +209,19 @@ async function boot() {
   main.innerHTML = `<div class="page fv-page">
     ${areaNav('mundo')}<header class="fv-hero">
       <h1>Mundo</h1>
-      <p class="fv-sub">Tus lugares, listos para recorrer.</p>
+
       <div class="fv-statbar" id="fv-stats"></div>
-      <div class="seg fv-viewseg" role="group" aria-label="Vista">
-        <button class="on" data-fvv="cards" aria-pressed="true">Galería</button>
-        <button data-fvv="map" aria-pressed="false">Mapa</button>
+      <div class="fv-viewseg" role="group" aria-label="Vista">
+        <button class="ui-button ui-button--quiet" data-fvv="cards" aria-pressed="true" hidden>Ver galería</button>
+        <button class="ui-button ui-button--quiet" data-fvv="map" aria-pressed="false">Ver mapa</button>
       </div>
     </header>
-    <p class="world-suggested" id="world-suggested" hidden>Descripciones · Sugerido</p>
+    <div id="world-suggested" hidden></div>
     <div id="w-cards">
       <div class="w-bar">
         <div class="w-filters" id="w-filters" role="group" aria-label="Filtrar islas">
           <button class="on" data-f="todas" aria-pressed="true">Todas</button>
-          <button data-f="fotoreal" aria-pressed="false">Con splat</button>
+          <button data-f="fotoreal" aria-pressed="false">Fotorrealistas</button>
           <button data-f="record" aria-pressed="false">Con récord</button>
           <button data-f="volables" aria-pressed="false">Para volar</button>
         </div>
@@ -236,7 +237,7 @@ async function boot() {
     </div>
     <div class="fv-mapwrap" id="fv-mapwrap" hidden>
       <div class="fv-mapbar">
-        <div class="seg" id="fv-layers" role="group" aria-label="Capa base">
+        <div class="ui-segmented" id="fv-layers" role="group" aria-label="Capa base">
           <button class="on" data-ly="sat" aria-pressed="true">Satélite</button>
           <button data-ly="dark" aria-pressed="false">Oscuro</button>
           <button data-ly="plano" aria-pressed="false">Plano</button>
@@ -289,12 +290,18 @@ async function boot() {
     || ((b.capabilities?.splat|0)-(a.capabilities?.splat|0))
     || String(b.clip_id).localeCompare(String(a.clip_id)));
 
+  const titleCounts = new Map();
+  scenes.forEach(sc => { const title=sceneTitle(sc.displayName || sc.name); titleCounts.set(title,(titleCounts.get(title)||0)+1); });
+  scenes.forEach(sc => {
+    const title=sceneTitle(sc.displayName || sc.name);
+    sc.displayName = titleCounts.get(title)>1 ? `${title} · ${fechaDe(sceneSources(sc)[0]) || 'Captura '+(scenes.indexOf(sc)+1)}` : title;
+  });
   registerScenes(scenes, 'Mundo');
   const nFly = scenes.filter(s=>s.capabilities?.terrain).length;
   const nSp = scenes.filter(s=>s.capabilities?.splat).length;
   const secs = scenes.reduce((t,s)=>t+(s.stats?.track_duration_s||0),0);
   document.getElementById('fv-stats').innerHTML =
-    `<span><b>${nFly}</b><em>lugares para volar</em></span><span><b>${nSp}</b><em>con splat</em></span>`+
+    `<span><b class="ui-figure">${fmt.number(nFly)}</b><em>lugares para volar</em></span><span><b class="ui-figure">${fmt.number(nSp)}</b><em>fotorrealistas</em></span>`+
     (secs?`<span><b>${dur(secs)}</b><em>de vuelo real</em></span>`:'');
 
   const rail = document.getElementById('w-rail');
@@ -305,6 +312,9 @@ async function boot() {
       : '<div class="ui-empty"><p>Aún no tienes lugares para explorar.</p><a class="ui-button ui-button--primary" href="tresd.html?tab=process">Crear escena</a><p>Empieza con una órbita de tu casa.</p></div>';
     document.querySelector('.w-bar').hidden=true;document.querySelector('.fv-viewseg').hidden=true;return;
   }
+  const gallerySuggestion = Suggested({content:document.querySelector('.w-railwrap')});
+  gallerySuggestion.classList.add('world-descriptions');
+  document.querySelector('.w-bar').after(gallerySuggestion);
   let previewObserver = null;
   const observePreviews = () => {
     previewObserver?.disconnect();
@@ -374,23 +384,17 @@ async function boot() {
     descriptions.set(sc.clip_id,insight || {error:failed});
     const card=rail.querySelector(`[data-i="${scenes.indexOf(sc)}"] .wi-description`);
     if(card){card.setAttribute('aria-busy','false');card.textContent=insight?.caption_short || (failed?'Descripción no disponible.':'');}
-    if(insight)document.getElementById('world-suggested').hidden=false;
-    if(sel===sc){const text=document.querySelector('.wp-description');if(text)text.textContent=insight?.caption_short || '';}
+
+    if(sel===sc){const text=document.querySelector('.wp-description');if(text && insight)text.replaceChildren(suggestionBlock({title:'',text:insight.caption_short,fullText:insight.caption}));}
   });
-  const activateCard = el => {
-    pick(+el.dataset.i);
-    const target=matchMedia('(min-width:1024px)').matches ? document.getElementById('w-panel') : el;
-    target.scrollIntoView({ behavior:reducedMotion()?'instant':'smooth', inline:'nearest', block:'nearest' });
-  };
   rail.addEventListener('click', e => {
-    const el = e.target.closest('.wi'); if (!el) return;
-    activateCard(el);
-  });
-  rail.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const el = e.target.closest('.wi'); if (!el) return;
-    e.preventDefault();
-    activateCard(el);
+    const button = e.target.closest('[data-world-detail]');
+    if (!button) return;
+    pick(+button.dataset.worldDetail);
+    if (matchMedia('(min-width:1024px)').matches) return;
+    const panel = document.getElementById('w-panel');
+    const sheet = createSheet({title:'Detalles del lugar',content:panel,size:'full',className:'scene-sheet',onClose:()=>{document.getElementById('w-cards').append(panel);sheet.destroy();}});
+    sheet.open(button);
   });
   document.addEventListener('click', e => {
     if (e.target.closest('[data-world-info]')) { sceneInfo({model:sel,opener:e.target.closest('button')}); return; }
@@ -420,12 +424,12 @@ async function boot() {
   });
   // ── MAPA v2: capas, huellas de cobertura, rutas reales, popup de misión ──
   let map = null, rutasOn = false, routeRequest = 0;
-  const RASTER = t => ({ version:8, sources:{ b:{ type:'raster', tiles:[t], tileSize:256 } },
+  const RASTER = (t, attribution) => ({ version:8, sources:{ b:{ type:'raster', tiles:[t], tileSize:256, attribution } },
     layers:[{ id:'b', type:'raster', source:'b' }] });
   const LAYERS = {
-    sat: RASTER('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
-    dark: RASTER('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'),
-    plano: RASTER('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'),
+    sat: RASTER('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', '© Esri'),
+    dark: RASTER('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png', '© CARTO © OpenStreetMap'),
+    plano: RASTER('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', '© CARTO © OpenStreetMap'),
   };
   let mapBounds = null;
   const MLAT = 111320;
@@ -472,12 +476,12 @@ async function boot() {
     const go = e => `volar.html?m=${encodeURIComponent(sc.clip_id)}${e}${cfgExtra(sc)}`;
     return `<div class="fv-pop">
       <div class="fv-pop-poster" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></div>
-      <b>${esc(sceneTitle(sc.name))}</b>
-      <p class="fv-pop-description">${esc(descriptions.get(sc.clip_id)?.caption_short || '')}</p>
-      <span>${st.gsd_cm_px ? st.gsd_cm_px + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + rec.toFixed(1) + 's' : ''}</span>
+      <b>${esc(sceneTitle(sc.displayName || sc.name))}</b>
+      ${descriptions.get(sc.clip_id)?.caption_short ? suggestionBlock({title:'',text:descriptions.get(sc.clip_id).caption_short,fullText:descriptions.get(sc.clip_id).caption}).outerHTML : ''}
+      <span>${st.gsd_cm_px ? fmt.number(st.gsd_cm_px,1) + ' cm/px · ' : ''}${st.track_duration_s ? dur(st.track_duration_s) + ' vuelo real' : ''}${rec != null ? ' · récord ' + fmt.number(rec,1) + 's' : ''}</span>
       ${sc.capabilities?.terrain ? `<div class="fv-pop-btns">
         <a href="${go('')}" data-golaunch="${go('')}" data-poster="${esc(sc.assets?.poster||'')}">Libre</a>
-        <a href="${go('&reto=1')}" class="hot" data-golaunch="${go('&reto=1')}" data-poster="${esc(sc.assets?.poster||'')}">Gate Rush</a>
+        <a href="${go('&reto=1')}" class="hot" data-golaunch="${go('&reto=1')}" data-poster="${esc(sc.assets?.poster||'')}">${term('gateRush')}</a>
         <a href="${go('&modo=cinematico')}" data-golaunch="${go('&modo=cinematico')}" data-poster="${esc(sc.assets?.poster||'')}">Cine</a>
       </div>` : '<em>en preparación</em>'}
     </div>`;
@@ -494,18 +498,18 @@ async function boot() {
       throw error;
     }
     mapBounds = new maplibregl.LngLatBounds();
-    map = new maplibregl.Map({ container: document.getElementById('fv-map'), style: LAYERS.sat,
+    map = new maplibregl.Map({ ...mapSkinOptions, container: document.getElementById('fv-map'), style: LAYERS.sat,
       center: [-74.06, 4.75], zoom: 11, attributionControl: false });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    skinMap(map);
     map.on('load', addOverlays);
     for (const sc of scenes) {
       const c = sc.world?.center_wgs84; if (!c) continue;
       mapBounds.extend(c);
-      const pop = new maplibregl.Popup({ offset: 20, closeButton: false, maxWidth: '260px' })
+      const pop = new maplibregl.Popup({ anchor: 'bottom', offset: 20, closeButton: false, maxWidth: '260px' })
         .setHTML(missionPopup(sc));
       const dot = document.createElement('div');
       dot.className = 'fv-pin2' + (sc.capabilities?.splat ? ' splat' : '');
-      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.name).split(' · ')[0])}</span>`;
+      dot.innerHTML = `<span class="fv-pin-img" style="background-image:${esc(bgLayers(sc.assets?.poster||'', "'"))}"></span><span class="fv-pin-lb">${esc(sceneTitle(sc.displayName || sc.name).split(' · ')[0])}</span>`;
       new maplibregl.Marker({ element: dot }).setLngLat(c).setPopup(pop).addTo(map);
       dot.addEventListener('click', () => map.flyTo({ center: c, zoom: 15.5, duration: reducedMotion() ? 0 : 340 }));
     }
@@ -533,7 +537,7 @@ async function boot() {
   }
   document.querySelector('.fv-viewseg').addEventListener('click', e => {
     const b = e.target.closest('[data-fvv]'); if (!b) return;
-    document.querySelectorAll('.fv-viewseg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); });
+    document.querySelectorAll('.fv-viewseg button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); x.hidden = x === b; });
     if (b.dataset.fvv === 'map') {
       void showMap().catch(error => {
         main.insertAdjacentHTML('beforeend', `<div class="fv-loading">Mapa: ${esc(error.message)}</div>`);

@@ -89,3 +89,10 @@ body:has(.area-nav), .share-page { --fs-2xs: var(--fs-xs); }
 .scene-sheet .pv-kbd { opacity:1; }
 .scene-sheet .pv-suggestion { margin-top:var(--sp-5); }
 .scene-source-placeholder { display:grid; place-items:center; min-height:var(--sp-8); background:var(--surface-2); color:var(--text-2); }
+/* Shared scene labels remain sans; only measured figures use mono. */
+.area-nav.ui-tabs { margin-bottom:var(--sp-5); }
+.scene-suggestion h3:empty { display:none; }
+.scene-suggestion .ui-suggested { background:none; border:0; padding:0; }
+:where(.page-3d,.fv-page,.lab-main,.si-workspace,.scene-sheet) :is(.mlb,.ps-note,.st-node,.pv-meta,.pv-kbd,.scan-hd,.mpreset small,.sp-profile-top em,.sp-eta,.st-tray,.sl-opt-m,.tn-count,.si-evidence,.si-role-summary) { font-family:var(--font); }
+/* Heavy scene pages navigate directly; live canvases can cancel document snapshots. */
+@view-transition { navigation: none; }

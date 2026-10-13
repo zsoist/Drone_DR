@@ -167,7 +167,7 @@ class SplatFrontierUiContractTests(unittest.TestCase):
         self.assertIn("renderSplatProfiles(splatProfiles)", self.tresd)
         self.assertNotIn("renderSplatProfiles(splatProfiles, 'frontier')", self.tresd)
         self.assertIn("const SPLAT_DEFAULT_KEY = 'mcmc1m'", self.tresd)
-        self.assertIn('<option value="mcmc1m">Equilibrado (MCMC 1M)</option>',
+        self.assertIn('<option value="mcmc1m">Equilibrada</option>',
                       (ROOT / "web" / "scene-improve.js").read_text())
         self.assertIn("selectedSplatRequest(sceneSplatConfig)", self.tresd)
         self.assertNotIn("data-scene-splat-preset", self.tresd)

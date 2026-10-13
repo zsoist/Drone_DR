@@ -45,6 +45,6 @@ test('best source selection handles pending data and retries failed requests', a
 
 test('version names keep processing details out of the picker', async () => {
   const { sceneVersionLabel } = await import('./scene-improve-ui.js');
-  assert.equal(sceneVersionLabel({current:true,preset_label:'Ultra+ 20K',backend:'NVIDIA CUDA',iters:20000,loss:.04}), 'Actual · Ultra+');
-  assert.equal(sceneVersionLabel({current:false,archived_at:'2026-07-14',preset_label:'Medium 2K'}), '2026-07-14 · Medium');
+  assert.equal(sceneVersionLabel({current:true,preset:'ultra20',preset_label:'Ultra+ 20K',backend:'NVIDIA CUDA',iters:20000,loss:.04}), 'Actual · Detalle superior');
+  assert.equal(sceneVersionLabel({current:false,archived_at:'2026-07-14',preset:'medium',preset_label:'Medium 2K'}), '14 jul 2026 · Detalle medio');
 });

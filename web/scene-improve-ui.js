@@ -1,3 +1,6 @@
+import { fmt } from './ui/format.js?v=402';
+import { term } from './ui/terms.js?v=402';
+import { Suggested } from './ui/suggested.js?v=402';
 import { createSheet } from './ui/sheet.js?v=402';
 import { showToast } from './ui/toast.js?v=402';
 import { registerPaletteSource } from './ui/palette.js?v=402';
@@ -10,10 +13,10 @@ export const sceneTitle = value => String(value || 'Escena')
   .replace(/\s+(?:alta\s+(?:fixed|stable)\b|iso\s+low\b).*$/i, '')
   .replace(/\s+v\d+(?:\.\d+)*\s*$/i, '').trim().replace(/^(\d+)$/, 'Escena $1') || 'Escena';
 export const sceneVersionLabel = splat => [
-  splat.current ? 'Actual' : (splat.archived_at || 'Versión anterior'),
-  (splat.preset_label || splat.preset || '').replace(/\s*\d+K\b/gi, '').trim(),
+  splat.current ? 'Actual' : (fmt.date(splat.archived_at) || 'Versión anterior'),
+  term(splat.preset) !== splat.preset ? term(splat.preset) : '',
 ].filter(Boolean).join(' · ');
-export const areaNav = active => `<nav class="area-nav" aria-label="Área 3D">${[['escenas','tresd.html','Escenas'],['mundo','mundo.html','Mundo'],['volar','volar.html','Volar']].map(([key,href,label]) => `<a href="${href}"${key===active?' aria-current="page"':''}>${label}</a>`).join('')}</nav>`;
+export const areaNav = active => `<nav class="area-nav ui-tabs" aria-label="Área 3D">${[['escenas','tresd.html','Escenas'],['mundo','mundo.html','Mundo'],['volar','volar.html','Volar']].map(([key,href,label]) => `<a href="${href}"${key===active?' aria-current="page"':''}>${label}</a>`).join('')}</nav>`;
 export const skeletonCards = () => `<div class="scene-skeleton" aria-hidden="true">${Array.from({length:2},()=>'<div><div class="ui-skeleton ui-skeleton--media"></div><div class="ui-skeleton ui-skeleton--text"></div></div>').join('')}</div>`;
 export function registerScenes(rows, label = 'Escena') {
   return registerPaletteSource(() => rows.map(row => ({id:`world-${row.clip_id}`,label:sceneTitle(row.title || row.name || row.clip_id),keywords:`${label} 3D`,href:`share.html?m=${encodeURIComponent(row.clip_id)}`})));
@@ -51,8 +54,8 @@ export async function copyLink(url, opener) {
 export function suggestionBlock({title='Descripción de la escena', text, fullText, empty='Aún no hay una descripción disponible.'}) {
   const node=document.createElement('section');node.className='scene-suggestion';
   const heading=document.createElement('h3');heading.textContent=title;node.append(heading);
-  if(text){const tag=document.createElement('span');tag.className='ui-chip';tag.textContent='Sugerido';node.append(tag);}
-  const p=document.createElement('p');p.textContent=text || empty;node.append(p);
+  const p=document.createElement('p');p.textContent=text || empty;
+  node.append(text ? Suggested({content:p}) : p);
   if(text && fullText && fullText!==text){
     const details=document.createElement('details');
     const summary=document.createElement('summary');summary.textContent='Ver más';

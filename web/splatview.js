@@ -1,4 +1,5 @@
-import { reducedMotion } from './scene-improve-ui.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { reducedMotion } from './scene-improve-ui.js?v=414';
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
 // plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
@@ -30,7 +31,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   if (signal?.aborted) throw abortErr();
   const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=402');
   if (signal?.aborted) throw abortErr();
-  host.style.position = 'relative';
+  if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
   const holder = document.createElement('div');
   holder.style.cssText = 'position:absolute;inset:0;touch-action:none';
   host.appendChild(holder);
@@ -123,7 +124,7 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   clearTimeout(tmoId);
   if (onAbort) signal.removeEventListener('abort', onAbort);
   if (signal?.aborted) { teardownCore(); throw abortErr(); }
-  onStatus?.('Splat · 100%');
+  onStatus?.('Escena lista');
 
   // ── bounds: Spark no expone centro/radio como GS3D — Box3 del mesh con
   // guard anti no-finito (mismo patrón defensivo del visor anterior) ──
@@ -297,9 +298,9 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
       // los splats del lane CUDA vienen NORMALIZADOS por nerfstudio → solo lectura relativa
       const unit = unitsMeters === false ? 'u' : 'm';
       mChip.title = unitsMeters === false
-        ? 'Unidades de escena RELATIVAS — este splat se entrenó normalizado (lane CUDA); la distancia real requiere scene_to_meters (próxima fase)'
-        : 'Distancia sobre el plano del suelo en metros (poses topocéntricas del modelo)';
-      mChip.textContent = d >= 100 ? `${d.toFixed(0)} ${unit}` : `${d.toFixed(2)} ${unit}`;
+        ? 'Unidades relativas de la escena. Esta vista no permite medir distancias reales.'
+        : 'Distancia sobre el plano del suelo en metros';
+      mChip.textContent = `${fmt.number(d, d >= 100 ? 0 : 2)} ${unit}`;
       host.appendChild(mChip);
     }
     wake();

@@ -1,10 +1,12 @@
-import { sceneTitle, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { term } from './ui/terms.js?v=402';
+import { sceneTitle, areaNav, createSheet, confirmSheet, showToast, skeletonCards, registerScenes } from './scene-improve-ui.js?v=414';
 // Splat Lab — SuperSplat (MIT, self-hosted en /supersplat/) integrado al shell.
 // Flujo completo: elegir splat → editar (floaters/crop/transform) → File > Export
 // → SUBIR AQUÍ MISMO (drag&drop o botón) → se publica versionado (history/) y el
 // viewer/manifest se actualizan solos. El original nunca se pierde.
 const main = renderShell('splatlab.html');
-main.classList.add('lab-main');
+main.classList.add('lab-main', 'ab-page', 'ab-page--wide');
 main.setAttribute('aria-busy','true');
 main.innerHTML=areaNav('escenas')+skeletonCards();
 
@@ -35,17 +37,17 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
     `/supersplat/?load=${encodeURIComponent('/' + splatUrl(s))}&filename=${encodeURIComponent(s.name)}`;
 
   main.innerHTML = `
-    ${areaNav('escenas')}${pageHead('Editar splat', 'Limpia la escena y conserva una versión anterior.', '<div class="sl-switch" id="lab-picker"></div>')}
-    <div class="sl-bar" role="toolbar" aria-label="Herramientas del splat">
-      <div class="sl-files" id="lab-actions" role="group" aria-label="Archivo del splat"></div>
-      <div class="sl-clean" id="lab-clean" role="group" aria-label="Limpieza automática del splat"></div>
+    ${shell.backLink('Escenas', '/tresd.html')}${pageHead(term('splatLab'), 'Limpia la escena y conserva una versión anterior.', '<div class="sl-switch" id="lab-picker"></div>')}
+    <div class="sl-bar" role="toolbar" aria-label="Herramientas de la escena">
+      <div class="sl-files" id="lab-actions" role="group" aria-label="Archivo de la escena"></div>
+      <div class="sl-clean" id="lab-clean" role="group" aria-label="Limpieza de la escena"></div>
       <button class="btn icon sl-full" id="lab-full" title="Editor a pantalla completa (Esc para salir)" aria-label="Editor a pantalla completa">${icon('fit')}</button>
     </div>
     <div class="sl-status" role="status" aria-live="polite"><span id="lab-status"></span><span id="lab-clean-status"></span></div>
     <div class="lab-frame-wrap" id="lab-drop">
       <iframe id="lab-frame" class="lab-frame" allow="fullscreen" title="Editor SuperSplat"></iframe>
       <button class="btn lab-exit" id="lab-exit" hidden aria-label="Salir de pantalla completa">${icon('close')} Salir</button>
-      <div class="lab-drophint" id="lab-drophint" hidden>Suelta el splat editado (.ply / .splat / .ksplat) para publicarlo</div>
+      <div class="lab-drophint" id="lab-drophint" hidden>Suelta la escena editada (.ply / .splat / .ksplat) para publicarlo</div>
     </div>
     <p class="page-foot lab-tip"><b>Flujo:</b> selecciona y borra puntos sueltos · recorta los bordes ·
       <b>File → Export</b> descarga el resultado · súbelo aquí (botón o arrástralo) y se guarda una versión nueva —
@@ -80,6 +82,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
   const actions = document.getElementById('lab-actions');
   const fileIn = document.getElementById('lab-file');
   const drop = document.getElementById('lab-drop');
+  main.querySelector('.sl-bar').before(drop);
   const hint = document.getElementById('lab-drophint');
   const TUNE_FMT = [['tn-op', v => v + '%'], ['tn-k', v => (+v).toFixed(1) + '×'], ['tn-an', v => v], ['tn-rad', v => 'P' + v]];
   const TUNE_DEF = { 'tn-op': 3.5, 'tn-k': 6, 'tn-an': 15, 'tn-rad': 99.5 };
@@ -129,7 +132,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
   };
   // clic dentro del editor (iframe): el documento padre nunca ve el pointerdown → cerramos por blur de la ventana
   window.addEventListener('blur', () => { if (tunePop) tunePop.close(); });
-  const sizeMB = s => `${((s.bytes || 0) / 1e6).toFixed(1)} MB`;
+  const sizeMB = s => `${fmt.number((s.bytes || 0) / 1e6,1)} MB`;
   const itersK = s => s.iters ? `${s.iters >= 1000 ? s.iters / 1000 + 'K' : s.iters} pasos` : '';
   let pickerQ = '';
   const renderList = () => {
@@ -155,12 +158,12 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
   const renderPicker = () => {
     const s = splats[cur];
     if (!s) {
-      picker.innerHTML = '<span class="footer-note sl-none">Sin splats aún — entrena uno en el tab 3D.</span>';
+      picker.innerHTML = '<span class="footer-note sl-none">Aún no hay escenas fotorrealistas. Crea una desde Escenas.</span>';
       return;
     }
     pickerQ = '';
     picker.innerHTML = `
-      <button type="button" class="btn sl-switch-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Cambiar splat (${splats.length})">
+      <button type="button" class="btn sl-switch-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Cambiar escena (${splats.length})">
         ${icon('cube')}<span class="sl-sw-name">${esc(title(s))}</span><span class="sl-sw-meta mono">${sizeMB(s)}</span>${icon('chevD')}
       </button>`;
   };
@@ -169,9 +172,9 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
     pickerQ = '';
     const box = document.createElement('div');
     box.innerHTML = `
-      <div class="search sl-pop-search">${icon('search')}<input type="search" id="lab-pq" placeholder="Buscar…" aria-label="Buscar splat" autocomplete="off"></div>
-      <div class="sl-list" id="lab-list" role="listbox" aria-label="Splats disponibles"></div>`;
-    const pop=createSheet({title:'Elegir splat',content:box,size:'full',className:'scene-sheet',onClose:()=>pop.destroy()});pop.open(btn);
+      <div class="search sl-pop-search">${icon('search')}<input type="search" id="lab-pq" placeholder="Buscar…" aria-label="Buscar escena" autocomplete="off"></div>
+      <div class="sl-list" id="lab-list" role="listbox" aria-label="Escenas disponibles"></div>`;
+    const pop=createSheet({title:'Elegir escena',content:box,size:'full',className:'scene-sheet',onClose:()=>pop.destroy()});pop.open(btn);
     if (!pop) return;
     box.addEventListener('input', e => { if (e.target.id === 'lab-pq') { pickerQ = e.target.value; renderList(); } });
     box.addEventListener('click', async e => {
@@ -187,8 +190,8 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
     const s = splats[cur];
     if (!s) { actions.innerHTML = ''; return; }
     actions.innerHTML = `
-      <a class="btn ghost" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar splat actual">${icon('dl')} Descargar</a>
-      <button class="btn ghost" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir splat editado">${icon('save')} Subir editado</button>
+      <a class="btn ghost" href="${splatUrl(s)}" download title="Descarga el .splat actual tal cual está publicado" aria-label="Descargar escena actual">${icon('dl')} Descargar</a>
+      <button class="btn ghost" id="lab-upload" title="Sube un splat editado (.ply/.splat/.ksplat) — la versión anterior se archiva en history/" aria-label="Subir escena editada">${icon('save')} Subir editado</button>
       <a class="btn ghost" href="share.html?m=${encodeURIComponent(s.clip_id)}" target="_blank" rel="noopener" title="Abre el visor privado de este modelo" aria-label="Abrir visor privado">${icon('ext')} Abrir visor</a>
       <a class="btn ghost" href="tresd.html?project=${encodeURIComponent(s.clip_id)}" title="Abre el proyecto en el tab 3D (mapa, malla, nube)" aria-label="Ver en el tab 3D">${icon('cube')} Ver en 3D</a>`;
     document.getElementById('lab-upload').addEventListener('click', () => fileIn.click());
@@ -210,7 +213,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
         <option value="aerial_aggressive">Aéreo agresivo</option>
         <option value="object">Objeto / interior</option>
       </select>
-      <button class="ui-button ui-button--primary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona flotantes/neblina/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('splat')} Limpiar en editor</button>
+      <button class="ui-button ui-button--secondary" id="lab-ac-ed" title="Limpia DENTRO del editor: selecciona flotantes/neblina/agujas y los borra como pasos de undo (Ctrl+Z ×2 deshace; Edit→Reset restaura todo). Luego File→Export para publicar">${icon('splat')} Limpiar en editor</button>
       <div class="btn-group" role="group" aria-label="Historial del editor">
         <button class="btn icon" id="lab-undo" title="Deshace el último paso dentro del editor (la limpieza automática es UN solo paso)" aria-label="Deshacer en el editor">${icon('undo')}</button>
         <button class="btn icon" id="lab-redo" title="Rehace el paso deshecho dentro del editor" aria-label="Rehacer en el editor">${icon('redo')}</button>
@@ -301,12 +304,14 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
   const wrapEmpty = on => drop.classList.toggle('is-empty', on);
   const renderLazy = () => {
     const s = splats[cur];
+    const model = sys.models?.find(model => model.clip_id === s?.clip_id);
+    lazyBox.style.backgroundImage = model ? `linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,.7)), url("data/models/${encodeURIComponent(model.clip_id)}/${encodeURIComponent(model.ortho_asset || 'ortho.jpg')}")` : '';
     lazyBox.innerHTML = `
       ${icon('cube')}
       <b>Abre tu escena para editar</b>
-      <p>Carga el editor cuando lo necesites. La descarga inicial es de unos 25 MB.</p>
+      <p>Editor: 25 MB${s ? ` · Escena: ${sizeMB(s)}` : ''}</p>
       ${s ? `<span class="sl-empty-stats"><span class="chip sm">${esc(title(s))}</span>
-        <span class="chip sm mono">${sizeMB(s)}</span>${s.iters ? `<span class="chip sm mono">${esc(itersK(s))}</span>` : ''}</span>` : ''}
+        <span class="chip sm mono">${sizeMB(s)}</span></span>` : ''}
       <button class="ui-button ui-button--primary" id="lab-load-ed" aria-label="Cargar editor SuperSplat">${icon('cube')} Cargar editor</button>`;
     lazyBox.querySelector('button').addEventListener('click', arm);
   };
@@ -410,7 +415,7 @@ main.innerHTML=areaNav('escenas')+skeletonCards();
       st.textContent = `body:not(.ab-mobile) #view-cube-container { transform: scale(.72); transform-origin: top right; }
         body:not(.ab-mobile) #right-toolbar { top: max(50%, 300px) !important; }`;
       doc.head.appendChild(st);
-      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=402';doc.head.appendChild(foundation);
+      const foundation=document.createElement('link');foundation.rel='stylesheet';foundation.href='/scene-improve-editor.css?v=414';doc.head.appendChild(foundation);
       doc.documentElement.dataset.theme=document.documentElement.dataset.theme || 'dark';
       doc.addEventListener('keydown', e => { if(e.key==='Escape' && drop.classList.contains('lab-fullscreen')) { setFull(false); document.getElementById('lab-full').focus(); } });
       doc.querySelectorAll('#menu-arrow, #menu-collapse').forEach(button => {
