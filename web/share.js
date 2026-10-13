@@ -1,5 +1,5 @@
-import { areaNav, contentSheet, sceneInfo, reducedMotion } from './scene-improve-ui.js?v=391';
-import { loadIsCurrent, analysisFor } from './scene-improve-state.js?v=391';
+import { sceneTitle, sceneVersionLabel, areaNav, contentSheet, sceneInfo, reducedMotion } from './scene-improve-ui.js?v=399';
+import { loadIsCurrent } from './scene-improve-state.js?v=399';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
 import * as THREE from '/vendor/three180.module.js?v=391';
@@ -7,7 +7,7 @@ import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js
 import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=391';
 import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=391';
 import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=391';
-import { mountSplatViewer } from '/splatview.js?v=391';
+import { mountSplatViewer } from '/splatview.js?v=399';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,15 +42,13 @@ const fmtRun = sec => !sec ? ''
   : sec < 180 ? `${Math.round(sec)}s`
     : sec < 7200 ? `${Math.round(sec / 60)}min`
       : `${(sec / 3600).toFixed(1)}h`;
-const splatVersionLabel = s => [
-  s.current ? 'Actual' : (s.archived_at || 'Historial'),
-  s.preset_label || (s.preset ? s.preset[0].toUpperCase() + s.preset.slice(1) : ''),
-  s.iters ? `${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : '',
-  s.backend || '',
-  fmtRun(s.duration_s),
-  s.loss != null ? `loss ${s.loss}` : '',
-  `${(s.bytes / 1e6).toFixed(1)} MB`,
-].filter(Boolean).join(' · ');
+const splatVersionLabel = sceneVersionLabel;
+const splatDetails = s => s ? [
+  s.preset_label, s.backend,
+  s.iters ? `${s.iters} iteraciones` : '',
+  s.duration_s ? `Tiempo: ${fmtRun(s.duration_s)}` : '',
+  s.loss != null ? `Error: loss ${s.loss}` : '',
+].filter(Boolean).join(' · ') : '';
 function splatAssetsFor(clipId, system) {
   return (system.splats || [])
     .filter(s => SPLAT_EXT.test(s.name) && ((s.clip_id || s.name.replace(SPLAT_EXT, '')) === clipId))
@@ -77,8 +75,8 @@ if (!cid) {
 }
 if (!meta) { body.setAttribute('aria-busy','false'); await new Promise(() => {}); }   // página vacía con mensaje: no seguir montando visores
 
-document.getElementById('sh-title').textContent = meta.title || `Vuelo ${cid.slice(-6)}`;
-document.title = `AeroBrain — ${meta.title || cid}`;
+document.getElementById('sh-title').textContent = sceneTitle(meta.title || `Vuelo ${cid.slice(-6)}`);
+document.title = `AeroBrain — ${sceneTitle(meta.title || cid)}`;
 const q = meta.qa || {};
 const base = `data/models/${cid}`;
 const splats = splatAssetsFor(cid, sys);
@@ -111,7 +109,7 @@ body.innerHTML = `
         ${splat ? '<button data-v="splat" role="tab" aria-selected="false">Splat</button>' : ''}
       </div>
     </div>
-    <div id="sh-view" class="sh-view"><img class="scene-poster" src="${base}/${esc(meta.ortho_asset || 'ortho.jpg')}" alt="Vista previa de ${esc(meta.title || 'la escena')}" data-transition-key="world-${esc(cid)}"><button class="ui-button ui-button--primary sh-start" id="sh-start">Cargar escena</button></div>
+    <div id="sh-view" class="sh-view"><img class="scene-poster" src="${base}/${esc(meta.ortho_asset || 'ortho.jpg')}" alt="Vista previa de ${esc(sceneTitle(meta.title || 'la escena'))}" data-transition-key="world-${esc(cid)}"><button class="ui-button ui-button--primary sh-start" id="sh-start">Cargar escena</button></div>
   </div>
 
   <div class="sh-actions"><button class="ui-button ui-button--secondary" id="sh-info">Información</button><button class="ui-button ui-button--quiet" id="sh-downloads">Descargas</button>${meta.cmp_asset && meta.has_dsm ? '<button class="ui-button ui-button--quiet" id="sh-compare">Comparar elevación</button>' : ''}</div>
@@ -146,7 +144,7 @@ function openDetail(node, title, opener) {
 }
 document.getElementById('sh-downloads').onclick=e=>openDetail(detailNodes.at(-1),'Descargas',e.currentTarget);
 document.getElementById('sh-compare')?.addEventListener('click',e=>openDetail(detailNodes[0],'Foto y elevación',e.currentTarget));
-document.getElementById('sh-info').onclick=async e=>{const opener=e.currentTarget; let flights=[];try{const r=await fetch('data/manifest/flights.json');if(r.ok)flights=(await r.json()).flights||[];}catch{}sceneInfo({model:{...meta,clip_id:cid},ai:analysisFor({...meta,clip_id:cid},flights),opener});};
+document.getElementById('sh-info').onclick=e=>sceneInfo({model:{...meta,clip_id:cid},processing:splatDetails(splat),opener:e.currentTarget});
 
 // tamaño de cada descarga como subtítulo (HEAD, solo lectura; si falla queda el formato)
 document.querySelectorAll('[data-size-url]').forEach(el => {
@@ -274,7 +272,7 @@ function makeScene() {
   const savedPosition=new THREE.Vector3(),savedTarget=new THREE.Vector3();
   requestAnimationFrame(()=>{savedPosition.copy(cam.position);savedTarget.copy(controls.target);});
   const nav=document.createElement('div');nav.className='viewer-tools';
-  nav.innerHTML='<button class="ui-button ui-button--secondary" data-camera="home" aria-label="Reiniciar vista">'+icon('home')+'</button><button class="ui-button ui-button--secondary" data-camera="full">Ampliar</button>';
+  nav.innerHTML='<button class="ui-button ui-button--secondary" data-camera="home" aria-label="Reiniciar vista">'+icon('fit')+'</button><button class="ui-button ui-button--secondary" data-camera="full">Ampliar</button>';
   const exit=()=>{view.classList.remove('sv-fullscreen');nav.querySelector('[data-camera="full"]').textContent='Ampliar';};
   nav.addEventListener('click',e=>{const b=e.target.closest('[data-camera]');if(!b)return;if(b.dataset.camera==='home')home();else{view.classList.toggle('sv-fullscreen');b.textContent=view.classList.contains('sv-fullscreen')?'Salir':'Ampliar';}});
   renderer.domElement.tabIndex=0;

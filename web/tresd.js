@@ -1,12 +1,12 @@
-import { areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=391';
-import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-state.js?v=391';
+import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=399';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=399';
   import * as THREE from '/vendor/three180.module.js?v=391';
   import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=391';
   import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=391';
   import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=391';
   import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=391';
   import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=391';
-  import { mountSplatViewer } from '/splatview.js?v=391';
+  import { mountSplatViewer } from '/splatview.js?v=399';
   import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=391';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
@@ -194,7 +194,7 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
   }
 
   const main = renderShell('tresd.html');
-  main.classList.add('page-3d');
+  main.classList.add('page-3d', 'ab-page');
   main.innerHTML = `
     ${areaNav('escenas')}
     ${pageHead('Tus escenas', 'Vuelve a los lugares que capturaste.', '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>')}
@@ -432,7 +432,7 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
   const sceneViewerPanel = projView.querySelector('.scene-viewer-panel');
   projView.querySelector('.td-crumb').after(sceneViewerPanel);
   const infoButton = document.createElement('button'); infoButton.className = 'ui-button ui-button--secondary'; infoButton.textContent = 'Información';
-  infoButton.addEventListener('click', () => { if (cur) sceneInfo({model:cur, ai:analysisFor(cur,flights), opener:infoButton}); });
+  infoButton.addEventListener('click', () => { if (cur) sceneInfo({model:cur, processing:splatDetails(splatAssetFor(cur.clip_id)), opener:infoButton}); });
   projView.querySelector('.td-crumb').append(infoButton);
 
   const tdTabs = document.getElementById('td-tabs');
@@ -941,16 +941,13 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
     : sec < 180 ? `${Math.round(sec)}s`
       : sec < 7200 ? `${Math.round(sec / 60)}min`
         : `${(sec / 3600).toFixed(1)}h`;
-  const splatVersionLabel = s => [
-    s.current ? 'Actual' : (s.archived_at || 'Historial'),
-    s.preset_label || (s.preset ? s.preset[0].toUpperCase() + s.preset.slice(1) : ''),
-    s.iters ? `${s.iters >= 1000 ? (s.iters / 1000) + 'k' : s.iters} iters` : '',
-    s.backend || '',
-    fmtRun(s.duration_s),
-    s.loss != null ? `loss ${s.loss}` : '',
-    `${(s.bytes / 1e6).toFixed(1)} MB`,
-    (s.format || s.name.split('.').pop() || 'splat').toUpperCase(),
-  ].filter(Boolean).join(' · ');
+  const splatVersionLabel = sceneVersionLabel;
+  const splatDetails = s => s ? [
+    s.preset_label, s.backend,
+    s.iters ? `${s.iters} iteraciones` : '',
+    s.duration_s ? `Tiempo: ${fmtRun(s.duration_s)}` : '',
+    s.loss != null ? `Error: loss ${s.loss}` : '',
+  ].filter(Boolean).join(' · ') : '';
   let sysErr = false;   // distinguir "no hay proyectos" de "no se pudo CARGAR el índice"
   try { const response=await fetch('data/manifest/system.json');if(!response.ok)throw new Error('Scene index unavailable');sys=await response.json(); } catch { sysErr = true; }
   models = sys.models || [];
@@ -1027,8 +1024,8 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
   };
   const titleFor = m => {
     const f = flightFor(m);
-    if (m.title) return m.title;
-    if (f?.label) return f.label;
+    if (m.title) return sceneTitle(m.title);
+    if (f?.label) return sceneTitle(f.label);
     const p = placeFor(m);
     return p.key !== 'sin-gps' ? `${p.name} · ${fmt.date(f?.date || dateKeyFor(m).slice(0, 10))}`
       : (f ? fmt.date(f.date) + ' ' + f.time : m.clip_id);
@@ -1177,7 +1174,7 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
   async function runProjAct(act, cid, btn) {
     const card = document.querySelector(`.proj-card[data-cid="${CSS.escape(cid)}"]`);
     const m = models.find(x => x.clip_id === cid);
-    if (act === 'info') { sceneInfo({model:m, ai:analysisFor(m,flights), opener:btn}); return; }
+    if (act === 'info') { sceneInfo({model:m, processing:splatDetails(splatAssetFor(m.clip_id)), opener:btn}); return; }
     if (!m) return;
     if (act === 'open') {
       if (card) { card.classList.add('smash'); setTimeout(() => card.classList.remove('smash'), 420); }
@@ -1187,7 +1184,7 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
     if (act === 'rename') {
       const tEl = card?.querySelector('.pc-title');
       if (!tEl) return;
-      tEl.innerHTML = `<input class="ctl td-rename" value="${esc(titleFor(m))}" maxlength="80" aria-label="Nuevo nombre del proyecto">`;
+      tEl.innerHTML = `<input class="ctl td-rename" value="${esc(m.title || flightFor(m)?.label || titleFor(m))}" maxlength="80" aria-label="Nuevo nombre del proyecto">`;
       const inp = tEl.querySelector('input');
       inp.focus(); inp.select();
       const save = async () => {
@@ -1923,7 +1920,14 @@ import { mapLayerIds, centerReplacement, analysisFor } from './scene-improve-sta
           </div>
           <div class="pv-kbd mono"><kbd>Espacio</kbd> pausa · <kbd>Enter</kbd> seleccionar · <kbd>←</kbd><kbd>→</kbd> navegar · <kbd>Esc</kbd> cerrar</div>
         </div>`;
-        pv.querySelector('.pv-suggestion').append(suggestionBlock({id:`${cid}.capture`,title:'Descripción de la captura',text:ai.summary}));
+        const description=pv.querySelector('.pv-suggestion');
+        description.setAttribute('aria-busy','true');
+        description.innerHTML='<div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div>';
+        sceneInsight({clip_id:cid}).then(insight=>{
+          description.replaceChildren(suggestionBlock({title:'Descripción de la captura',text:insight?.caption_short,fullText:insight?.caption}));
+        }).catch(()=>{
+          description.replaceChildren(suggestionBlock({title:'Descripción de la captura',empty:'No se pudo cargar la descripción.'}));
+        }).finally(()=>description.setAttribute('aria-busy','false'));
         const v = pv.querySelector('video');
         v.addEventListener('ended', () => { if (auto.on) step(1); });
       };
