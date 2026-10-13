@@ -1,5 +1,5 @@
-import { flightFallback } from './ui/display-name.js?v=451';
-import { fmt } from './ui/format.js?v=451';
+import { flightFallback } from './ui/display-name.js?v=453';
+import { fmt } from './ui/format.js?v=453';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
 // Reviewed against this exact image. Other frames keep their own stored description.

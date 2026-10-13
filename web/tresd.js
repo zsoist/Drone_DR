@@ -1,19 +1,19 @@
-import { skinPlayer } from './ui/player.js?v=451';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=451';
-import { fmt } from './ui/format.js?v=451';
-import { term } from './ui/terms.js?v=451';
-import { uniqueSceneNames } from './ui/display-name.js?v=451';
-import { thumbnailURL } from './ui/thumbnail.js?v=451';
-import { sceneInsight, sceneCover, hydrateSceneCovers, sceneSources, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=451';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=451';
-  import * as THREE from '/vendor/three180.module.js?v=451';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=451';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=451';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=451';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=451';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=451';
-  import { mountSplatViewer } from '/splatview.js?v=451';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=451';
+import { skinPlayer } from './ui/player.js?v=453';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=453';
+import { fmt } from './ui/format.js?v=453';
+import { term } from './ui/terms.js?v=453';
+import { uniqueSceneNames } from './ui/display-name.js?v=453';
+import { thumbnailURL } from './ui/thumbnail.js?v=453';
+import { sceneInsight, sceneCover, hydrateSceneCovers, sceneSources, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=453';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=453';
+  import * as THREE from '/vendor/three180.module.js?v=453';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=453';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=453';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=453';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=453';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=453';
+  import { mountSplatViewer } from '/splatview.js?v=453';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=453';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -1077,13 +1077,17 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=451';
   const sceneName = m => {
     if (namesFor !== models) {
       namesFor = models;
-      names = uniqueSceneNames(models.filter(x => x.title), flights, { nameOf: x => x.title, clean: sceneTitle, sourcesOf: sceneSources });
+      // owner titles first: the site title for its active version, then the model title
+      const siteTitles = new Map((sys.scenes || []).filter(site => site.active_version && site.title).map(site => [site.active_version, site.title]));
+      names = uniqueSceneNames(models, flights, { nameOf: x => siteTitles.get(x.clip_id) || x.title || '', clean: sceneTitle, sourcesOf: sceneSources, isPrimary: x => siteTitles.has(x.clip_id) });
     }
     return names.get(m.clip_id);
   };
   const titleFor = m => {
     const f = flightFor(m);
-    if (m.title) return sceneName(m) || sceneTitle(m.title);
+    const shared = sceneName(m);
+    if (shared && !/^Lugar sin identificar/.test(shared)) return shared;
+    if (m.title) return sceneTitle(m.title);
     if (f?.label) return sceneTitle(f.label);
     const p = placeFor(m);
     return p.key !== 'sin-gps' ? `${p.name} · ${fmt.date(f?.date || dateKeyFor(m).slice(0, 10))}`

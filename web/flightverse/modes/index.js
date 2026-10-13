@@ -26,12 +26,12 @@
 //   QA de desarrollo: ?invWave=n empieza en la oleada n; ?onboard=1 fuerza el onboarding
 //   markers{markers,edges,boss} (≈10 Hz)  game-mode{key,phase}  gr-miss  gr-penalty  onboard{step,copy}  reposition
 // Todos los tipos están registrados en BUS_EVENTS (integración).
-import { createInvasionMode } from '/flightverse/modes/invasion-mode.js?v=451';
-import { createGateRushMode } from '/flightverse/modes/gaterush-mode.js?v=451';
-import { createModeEvents } from '/flightverse/modes/events.js?v=451';
-import { createModeOverlay } from '/flightverse/modes/overlay.js?v=451';
-import { createOnboarding } from '/flightverse/modes/onboarding.js?v=451';
-import { createModeArbiter, setTourChrome, tourActiveFrom } from '/flightverse/modes/exclusive.js?v=451';
+import { createInvasionMode } from '/flightverse/modes/invasion-mode.js?v=453';
+import { createGateRushMode } from '/flightverse/modes/gaterush-mode.js?v=453';
+import { createModeEvents } from '/flightverse/modes/events.js?v=453';
+import { createModeOverlay } from '/flightverse/modes/overlay.js?v=453';
+import { createOnboarding } from '/flightverse/modes/onboarding.js?v=453';
+import { createModeArbiter, setTourChrome, tourActiveFrom } from '/flightverse/modes/exclusive.js?v=453';
 
 export function installEnemies(ctx) {
   const enemies = ctx.enemies;

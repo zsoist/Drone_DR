@@ -1,11 +1,11 @@
-import { uniqueSceneNames } from './ui/display-name.js?v=451';
-import { thumbnailURL } from './ui/thumbnail.js?v=451';
-import { fmt } from './ui/format.js?v=451';
-import { term } from './ui/terms.js?v=451';
-import { Suggested } from './ui/suggested.js?v=451';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=451';
-import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=451';
-import { coverageRows } from './scene-improve-state.js?v=451';
+import { uniqueSceneNames } from './ui/display-name.js?v=453';
+import { thumbnailURL } from './ui/thumbnail.js?v=453';
+import { fmt } from './ui/format.js?v=453';
+import { term } from './ui/terms.js?v=453';
+import { Suggested } from './ui/suggested.js?v=453';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=453';
+import { sceneTitle, sceneSources, sceneInsight, sceneCover, areaNav, createSheet, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, suggestionBlock } from './scene-improve-ui.js?v=453';
+import { coverageRows } from './scene-improve-state.js?v=453';
 // mundo.js — FLIGHTVERSE /mundo: WORLD SELECT estilo videojuego (Mario Kart
 // world map). Islas dinámicas en carrusel snap, selección → panel de misión
 // (Libre/Gate Rush/Cinemático = deep-links reales a /volar), récords locales,
@@ -280,11 +280,11 @@ async function boot() {
         source_count: target.site.source_inventory?.videos?.length || 0,
         source_status: status, effective_sources: active.effective_sources || [],
         dropped_sources: active.dropped_sources || [] };
-      man.name = target.site.title || man.name;
     }
     const model = (sys.models || []).find(m => m.clip_id === man.clip_id);
     man.reconstruction = model?.reconstruction; man.ai = model?.ai;
-    man.name = target.site?.title || model?.title || man.name;
+    // owner titles only (site, then model); never the compiler's automatic name — same rule as Escenas
+    man.name = target.site?.title || model?.title || '';
     return man;
   }).filter(Boolean);
   scenes.sort((a,b) => ((b.capabilities?.terrain|0)-(a.capabilities?.terrain|0))

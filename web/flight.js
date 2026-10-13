@@ -1,11 +1,11 @@
-import { flightFallback } from './ui/display-name.js?v=451';
-import { thumbnailURL } from './ui/thumbnail.js?v=451';
-import { fmt } from './ui/format.js?v=451';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=451';
-import { skinPlayer } from './ui/player.js?v=451';
-import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=451';
-import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=451';
-import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=451';
+import { flightFallback } from './ui/display-name.js?v=453';
+import { thumbnailURL } from './ui/thumbnail.js?v=453';
+import { fmt } from './ui/format.js?v=453';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=453';
+import { skinPlayer } from './ui/player.js?v=453';
+import { readAI, clipChips, credibleHighlights, eligibleFrame } from './home.ai.js?v=453';
+import { loadFlights, registerFlights, openPageSheet, save, renderFailure, skeleton, dataColor, figure, suggestedContent } from './home-shared.js?v=453';
+import { sampleTimes, sampleAt, acceptsShortcut } from './flight-clock.js?v=453';
 // Vista de vuelo: player + mapa sincronizado + charts + filmstrip + panel AI.
 const main = renderShell('index.html');
 main.classList.add('ab-page');

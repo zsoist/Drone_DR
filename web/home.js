@@ -1,8 +1,8 @@
-import { flightFallback } from './ui/display-name.js?v=451';
-import { thumbnailURL } from './ui/thumbnail.js?v=451';
-import { fmt } from './ui/format.js?v=451';
-import { readAI, loadInsights, bestCover } from './home.ai.js?v=451';
-import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=451';
+import { flightFallback } from './ui/display-name.js?v=453';
+import { thumbnailURL } from './ui/thumbnail.js?v=453';
+import { fmt } from './ui/format.js?v=453';
+import { readAI, loadInsights, bestCover } from './home.ai.js?v=453';
+import { loadFlights, registerFlights, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=453';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;

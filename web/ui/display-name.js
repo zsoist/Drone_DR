@@ -1,4 +1,4 @@
-import { fmt } from './format.js?v=451';
+import { fmt } from './format.js?v=453';
 
 export function flightFallback(flight = {}) {
   const time = flight.time?.slice(0, 5) || /DJI_\d{8}(\d{2})(\d{2})/.exec(flight.clip_id || '')?.slice(1).join(':');
@@ -7,7 +7,8 @@ export function flightFallback(flight = {}) {
 
 export function sceneDisplayName(scene, flights = []) {
   const name = scene.name || '';
-  if (!/^(?:Escena(?:\s+\d+)?|Render\s+\S+\s+\d{1,2}\s+\S+\s+\d{4}(?:\s+\d{1,2}:\d{2})?)$/i.test(name.trim())) return name;
+  // no owner title, or a generic stored one: derive "Place · d mmm"
+  if (name.trim() && !/^(?:Escena(?:\s+\d+)?|Render\s+\S+\s+\d{1,2}\s+\S+\s+\d{4}(?:\s+\d{1,2}:\d{2})?)$/i.test(name.trim())) return name;
   const ids = [scene.clip_id, ...(scene.sources || []).map(source => typeof source === 'string' ? source : source.clip_id)];
   const flight = flights.find(row => ids.includes(row.clip_id));
   const stamp = ids.map(id => /DJI_(\d{4})(\d{2})(\d{2})/.exec(id || '')).find(Boolean);
@@ -17,7 +18,7 @@ export function sceneDisplayName(scene, flights = []) {
 
 // One display name per scene, shared by Escenas and Mundo so both pages name a scene the same.
 // Generic stored names become "Place · d mmm"; equal names get the flight time (or "Captura N").
-export function uniqueSceneNames(scenes, flights = [], { nameOf = scene => scene.name || '', clean = name => name, sourcesOf = scene => [scene.clip_id] } = {}) {
+export function uniqueSceneNames(scenes, flights = [], { nameOf = scene => scene.name || '', clean = name => name, sourcesOf = scene => [scene.clip_id], isPrimary = () => false } = {}) {
   const base = scenes.map(scene => clean(sceneDisplayName({ ...scene, name: clean(nameOf(scene)), sources: sourcesOf(scene) }, flights))
     .replace(/(Bogotá) · Bogotá$/i, '$1'));
   const counts = new Map();
@@ -25,7 +26,9 @@ export function uniqueSceneNames(scenes, flights = [], { nameOf = scene => scene
   const used = new Set();
   return new Map(scenes.map((scene, i) => {
     const flight = flights.find(row => sourcesOf(scene).includes(row.clip_id));
-    const title = counts.get(base[i]) > 1 ? `${base[i]} · ${flight?.time?.slice(0, 5) || 'Captura ' + (i + 1)}` : base[i];
+    // a site's active version keeps the clean name (as on Mundo); older versions get the time
+    const plain = counts.get(base[i]) === 1 || (isPrimary(scene) && scenes.filter((other, j) => base[j] === base[i] && isPrimary(other)).length === 1);
+    const title = plain ? base[i] : `${base[i]} · ${flight?.time?.slice(0, 5) || 'Captura ' + (i + 1)}`;
     let name = title, n = 2;
     while (used.has(name)) name = `${title} · ${n++}`;
     used.add(name);

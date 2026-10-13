@@ -27,19 +27,19 @@
 //                  deciden en la liberación usando ctx.state.firing)
 // Bus: fire, hit{target,weapon,damage,kill,kind,pos}, explode{pos,size:'S'|'M'|'XL',big,weapon},
 // lock{target,state:'acquiring'|'locked'|'lost'|'none'}.
-import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=451';
+import { createWeapons, ARSENAL } from '/flightverse/weapons.js?v=453';
 import {
   angleBetween, bulletDrop, createDwell, createLockTracker, createVelocityTracker, evaluateLead,
   pickLockCandidate, pickSwarmTargets, resolveAimRay,
-} from '/flightverse/aiming.js?v=451';
-import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=451';
-import { reducedMotion } from '/flightverse/vegetation.js?v=451';
+} from '/flightverse/aiming.js?v=453';
+import { createWeaponModelLibrary } from '/flightverse/weapon-models.js?v=453';
+import { reducedMotion } from '/flightverse/vegetation.js?v=453';
 import {
   LEAD, MISIL, SWARM_LOCK, WEAPON_FAMILY, WEAPON_FX, WEAPON_PROFILES, WEAPON_UI, WEAPON_UI_KEYS,
-} from '/flightverse/weapon-registry.js?v=451';
-import { createShake, shakeOffsets } from '/flightverse/fx/shake.js?v=451';
-import { createHitStop } from '/flightverse/fx/hitstop.js?v=451';
-import { createFpvStatic } from '/flightverse/fx/fpv-static.js?v=451';
+} from '/flightverse/weapon-registry.js?v=453';
+import { createShake, shakeOffsets } from '/flightverse/fx/shake.js?v=453';
+import { createHitStop } from '/flightverse/fx/hitstop.js?v=453';
+import { createFpvStatic } from '/flightverse/fx/fpv-static.js?v=453';
 
 export async function installFx(ctx) {
   const {
@@ -50,7 +50,7 @@ export async function installFx(ctx) {
   const shake = { mag: 0 };
   const weaponModelErrors = new Set();
   const { GLTFLoader: ArsenalGLTFLoader } = await import(
-    '/vendor/three-addons180/loaders/GLTFLoader.js?v=451'
+    '/vendor/three-addons180/loaders/GLTFLoader.js?v=453'
   );
   const weaponModels = createWeaponModelLibrary({
     quality: Q.get('calidad') || localStorage.getItem('ab.fv.calidad') || 'auto',

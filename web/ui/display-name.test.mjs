@@ -26,3 +26,11 @@ test('every scene gets a unique name, so Escenas and Mundo agree', () => {
     flights.map(f => ({ ...f, clip_id: f.clip_id })), { sourcesOf: s => [s.clip_id.slice(0, -1)] }).values()];
   assert.equal(new Set(names).size, names.length);
 });
+
+test('a site active version keeps the clean name; an older version gets its time', () => {
+  const flightsX = [{ clip_id: 'old', place: 'Bogotá', date: '2026-07-14', time: '16:24:00' }, { clip_id: 'new', place: 'Bogotá', date: '2026-07-14', time: '17:00:00' }];
+  const names = uniqueSceneNames([{ clip_id: 'old', name: 'Dialectica 14 Julio' }, { clip_id: 'new', name: 'Dialectica 14 Julio' }],
+    flightsX, { sourcesOf: s => [s.clip_id], isPrimary: s => s.clip_id === 'new' });
+  assert.equal(names.get('new'), 'Dialectica 14 Julio');
+  assert.equal(names.get('old'), 'Dialectica 14 Julio · 16:24');
+});
