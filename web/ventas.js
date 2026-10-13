@@ -1,7 +1,7 @@
-import { canonicalPropertyURL } from './ventas.logic.js?v=391';
-import { createSheet } from './ui/sheet.js?v=391';
-import { showToast } from './ui/toast.js?v=391';
-import { registerPaletteSource } from './ui/palette.js?v=391';
+import { canonicalPropertyURL } from './ventas.logic.js?v=395';
+import { createSheet } from './ui/sheet.js?v=395';
+import { showToast } from './ui/toast.js?v=395';
+import { registerPaletteSource } from './ui/palette.js?v=395';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');
@@ -31,6 +31,7 @@ async function loadList() {
 }
 async function openEditor(property = {}, opener) {
   if (editor) editor.destroy();
+  let insightRequest;
   const content = document.createElement('form'); content.className = 'vt-form';
   content.innerHTML = `<p class="vt-note">Guarda una ficha privada con los datos y las imágenes de la propiedad.</p><div class="vt-fields">${fields.map(([key,label,placeholder],i)=>`<label class="vt-field ${i<4?'vt-full':''}"><span>${label}${['titulo','slug'].includes(key)?' *':''}</span><input class="ctl" name="${key}" value="${esc(property[key] || '')}" placeholder="${placeholder}" ${['titulo','slug'].includes(key)?'required':''} ${i>=4?`inputmode="${i<9?'decimal':'tel'}"`:''} ${key==='slug'?'maxlength="40"':''}></label>`).join('')}</div>
     <h3>Recorrido aéreo</h3><label class="vt-field"><span>Portada y galería</span><select class="ctl" name="clip"><option value="">Sin portada</option>${flights.filter(f=>f.frame_count).map(f=>`<option value="${esc(f.clip_id)}">${esc(f.label || fmt.date(f.date)+' · '+(f.time || ''))}</option>`).join('')}</select></label>
@@ -38,13 +39,30 @@ async function openEditor(property = {}, opener) {
     <h3>Descripción</h3><label class="vt-field"><span>Texto de la propiedad</span><textarea class="ctl" name="descripcion" rows="6" placeholder="Qué hace especial este lugar">${esc(property.descripcion || '')}</textarea></label>
     <section class="vt-suggestion" aria-label="Sugerencia de descripción" id="vt-suggestion"></section>
     <p class="vt-error" role="alert" id="vt-error"></p><div id="vt-result" role="status"></div><div class="vt-save"><button class="ui-button ui-button--primary" type="submit">Guardar propiedad</button></div>`;
-  const view = createSheet({title:property.slug ? 'Editar propiedad' : 'Nueva propiedad',content,size:'full',className:'vt-editor',onClose:()=>{ view.destroy(); if (editor===view) editor=null; }}); editor=view;
+  const view = createSheet({title:property.slug ? 'Editar propiedad' : 'Nueva propiedad',content,size:'full',className:'vt-editor',onClose:()=>{ insightRequest?.abort(); view.destroy(); if (editor===view) editor=null; }}); editor=view;
   const input = key=>content.elements.namedItem(key);
   input('clip').value = property.clip || ''; input('video').value=property.video || '';
-  function suggestion() {
-    const f=flights.find(f=>f.clip_id===input('clip').value), text=f?.ai?.summary || f?.ai?.caption;
+  async function suggestion() {
+    insightRequest?.abort();
+    const controller = new AbortController(); insightRequest = controller;
+    const id = input('clip').value;
     const box=content.querySelector('#vt-suggestion');
-    box.innerHTML = text ? `<span class="ui-chip">Sugerido</span><p>${esc(text)}</p><div class="vt-suggestion-actions"><button class="ui-button ui-button--secondary" type="button" data-accept>Usar descripción</button><button class="ui-button ui-button--quiet" type="button" data-dismiss>Descartar</button></div>` : '<h4>Sin análisis aún</h4><p>Elige un vuelo con análisis para revisar una descripción sugerida. También puedes escribir la tuya.</p>';
+    box.setAttribute('aria-busy', 'false');
+    if (!id) { box.innerHTML = '<p>Elige un vuelo para consultar su descripción. También puedes escribir la tuya.</p>'; return; }
+    box.setAttribute('aria-busy', 'true');
+    box.innerHTML = '<div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div><p role="status">Consultando la descripción…</p>';
+    let insight;
+    try {
+      const data = await read(`/api/clip/${encodeURIComponent(id)}/insight`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      insight = data.status === 'ready' ? data.insight : null;
+    } catch {
+      if (!controller.signal.aborted) { box.innerHTML = '<p>No se pudo cargar la descripción. Puedes escribir la tuya.</p>'; box.setAttribute('aria-busy', 'false'); }
+      return;
+    }
+    box.setAttribute('aria-busy', 'false');
+    const text = insight?.caption;
+    box.innerHTML = text ? `<span class="ui-chip">Sugerido</span><p>${esc(insight.caption_short || 'Descripción del vuelo disponible.')}</p><details><summary>Ver descripción completa</summary><p>${esc(text)}</p></details><div class="vt-suggestion-actions"><button class="ui-button ui-button--secondary" type="button" data-accept>Usar descripción</button><button class="ui-button ui-button--quiet" type="button" data-dismiss>Descartar</button></div>` : '<h4>Sin análisis aún</h4><p>Este vuelo aún no tiene una descripción. Puedes escribir la tuya.</p>';
     box.querySelector('[data-accept]')?.addEventListener('click',()=>{ input('descripcion').value=text; box.innerHTML='<p>Descripción añadida. Puedes editarla antes de guardar.</p>'; });
     box.querySelector('[data-dismiss]')?.addEventListener('click',()=>{ box.innerHTML='<p>Sugerencia descartada. Tu descripción se conserva.</p>'; });
   }

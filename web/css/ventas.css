@@ -27,6 +27,7 @@
 .vt-suggestion { padding:var(--sp-5); background:var(--surface-2); border-radius:var(--r-lg); }
 .vt-suggestion h4 { margin:0; font-size:var(--fs-lg); }
 .vt-suggestion p { color:var(--text-2); }
+.vt-suggestion summary { min-height:44px; padding:12px 0; cursor:pointer; }
 .vt-error { color:var(--danger); margin:0; }
 .vt-error:empty { display:none; }
 .vt-save { position:sticky; bottom:0; padding:var(--sp-4) 0 max(var(--sp-4),env(safe-area-inset-bottom)); background:var(--surface); border-top:1px solid var(--line); }

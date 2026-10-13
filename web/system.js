@@ -1,11 +1,11 @@
-import { jobState, jobRelativeTime, jobEmptyState } from './system.logic.js?v=391';
-import { createSheet } from './ui/sheet.js?v=391';
-import { showToast } from './ui/toast.js?v=391';
-import { registerPaletteSource } from './ui/palette.js?v=391';
+import { jobState, jobRelativeTime, jobEmptyState } from './system.logic.js?v=395';
+import { createSheet } from './ui/sheet.js?v=395';
+import { showToast } from './ui/toast.js?v=395';
+import { registerPaletteSource } from './ui/palette.js?v=395';
 
 const main = renderShell('system.html');
 main.classList.add('ab-page', 'sy-page');
-const kinds = { '3d': 'Modelo 3D', splat: 'Splat', foto4k: 'Foto', edit: 'Edición', upload: 'Subida', analyze: 'Análisis', ingest: 'Importación' };
+const kinds = { '3d': 'Modelo 3D', splat: 'Escena 3D', foto4k: 'Foto', edit: 'Edición', upload: 'Subida', analyze: 'Análisis', ingest: 'Importación' };
 const active = j => jobState(j)[1] === 'active';
 const failed = j => jobState(j)[1] === 'error';
 const skeleton = '<div class="sy-loading" aria-hidden="true"><div class="ui-skeleton ui-skeleton--text"></div><div class="ui-skeleton ui-skeleton--text"></div></div>';
@@ -27,7 +27,7 @@ main.innerHTML = `
     <div><h2>Almacenamiento</h2><p>Espacio ocupado por originales y archivos generados.</p><button class="ui-button ui-button--secondary" id="sy-inventory">Ver almacenamiento</button></div>
     <div><h2>Diagnósticos</h2><p>Errores recientes e informes guardados.</p><button class="ui-button ui-button--secondary" id="sy-reports">Ver diagnósticos</button></div>
   </section>
-  <section class="sy-review"><div><h2>Revisión de duplicados</h2><p>La cola de revisión aún no está disponible. Tus originales se conservan.</p></div><a class="ui-button ui-button--secondary" href="studio.html">Abrir Studio</a></section>`;
+  <section class="sy-review"><div><h2>Revisión de duplicados</h2><p>Disponible pronto. Tus originales se conservan.</p></div></section>`;
 const $ = id => document.getElementById(id);
 async function read(url, options) {
   const r = await authFetch(url, options);
@@ -50,10 +50,10 @@ function paintJobs() {
   const html = rows.length ? rows.slice(0, shown).map(j => {
     const [label,tone] = jobState(j);
     const progress = Math.round(Math.max(0, Math.min(1, Number(j.progress) || 0)) * 100);
-    return `<article class="sy-job"><div class="sy-job-top"><span class="sy-state ${tone}">${label}</span><span class="sy-note">${esc(kinds[j.kind] || j.kind || 'Trabajo')}</span></div>
+    return `<article class="sy-job"><div class="sy-job-top"><span class="sy-state ${tone}">${label}</span><span class="sy-note">${esc(kinds[j.kind] || 'Trabajo')}</span></div>
       <h3>${esc(j.title || j.label || 'Sin título')}</h3>
       ${active(j) ? `<div class="sy-progress"><progress max="100" value="${progress}" aria-label="Progreso"></progress><span class="ui-figures">${progress}%</span></div>` : ''}
-      <p>${esc(j.detail || (j.status === 'queued' ? 'Esperando su turno.' : label))}</p>
+      <p>${esc(j.status === 'queued' ? 'Esperando su turno.' : active(j) ? 'Procesando tus archivos.' : failed(j) ? 'Abre los detalles para revisar qué ocurrió.' : label)}</p>
       <div class="sy-job-foot"><span class="sy-note">${esc(jobRelativeTime(j, Date.now()))}</span><button class="ui-button ui-button--secondary" data-job="${esc(j.id)}">Ver detalles</button></div></article>`;
   }).join('') : `<div class="ui-empty"><h3>${empty.title}</h3>${empty.action ? `<button class="ui-button ui-button--primary" data-review-errors>${empty.action}</button>` : `<small>${esc(empty.note)}</small>`}</div>`;
   if ($('sy-jobs').dataset.html !== html) { $('sy-jobs').innerHTML = html; $('sy-jobs').dataset.html = html; }
@@ -107,7 +107,7 @@ async function loadHealth() {
     const age = Math.max(0, Date.now()/1000 - Number(n.ts || 0));
     $('sy-connection').textContent = age > 15 ? 'Datos desactualizados · esperando una muestra' : `Mac conectado · ${new Date(n.ts*1000).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
     $('sy-connection').className = age > 15 ? 'sy-error' : 'sy-note';
-    $('sy-metrics').innerHTML = [['CPU',`${n.cpu ?? '—'} %`],['Memoria',`${n.ram_used_gb ?? '—'} / ${n.ram_total_gb ?? '—'} GB`],['Disco libre',`${n.disk_free_gb ?? '—'} GB`],['Temperatura',n.thermal ? n.thermal.throttling ? 'Rendimiento limitado' : 'Normal' : 'Sin datos']].map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('');
+    $('sy-metrics').innerHTML = [['Procesador',`${n.cpu ?? '—'} %`],['Memoria',`${n.ram_used_gb ?? '—'} / ${n.ram_total_gb ?? '—'} GB`],['Disco libre',`${n.disk_free_gb ?? '—'} GB`],['Temperatura',n.thermal ? n.thermal.throttling ? 'Rendimiento limitado' : 'Normal' : 'Sin datos']].map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('');
   } catch { $('sy-connection').textContent = 'Sin conexión · los valores no están actualizados'; $('sy-connection').className = 'sy-error'; }
 }
 async function loadGPU() {
@@ -127,7 +127,7 @@ $('sy-inventory').addEventListener('click', async e => {
   try {
     const d = await read(`${DATA}/manifest/system.json`);
     if (!view.element.isConnected) return;
-    view.body.innerHTML = `<dl class="sy-storage">${[['raw','Originales'],['proxies','Copias de reproducción'],['frames','Fotogramas'],['reels','Reels'],['splats','Splats']].map(([k,v])=>`<div><dt>${v}</dt><dd class="ui-figures">${fmt.gb(d.storage?.[k] || 0)}</dd></div>`).join('')}</dl><p class="sy-note">Inventario actualizado: ${esc(d.generated_at || 'fecha no disponible')}.</p>`;
+    view.body.innerHTML = `<dl class="sy-storage">${[['raw','Originales'],['proxies','Copias de reproducción'],['frames','Fotogramas'],['reels','Reels'],['splats','Escenas 3D']].map(([k,v])=>`<div><dt>${v}</dt><dd class="ui-figures">${fmt.gb(d.storage?.[k] || 0)}</dd></div>`).join('')}</dl><p class="sy-note">Inventario actualizado: ${esc(d.generated_at || 'fecha no disponible')}.</p>`;
   } catch { if (view.element.isConnected) view.body.textContent = 'No se pudo cargar el inventario. Cierra y vuelve a intentarlo.'; }
 });
 $('sy-reports').addEventListener('click', async e => {

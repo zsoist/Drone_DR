@@ -89,6 +89,7 @@ button.ui-chip, a.ui-chip { min-height: 44px; min-width: 44px; cursor: pointer; 
 .ab-shell { --sidebar-w: 64px; }
 .ab-shell.ab-shell--navigation-only { min-height: 0; height: 0; padding: 0; }
 .ab-rail { display: none; }
+.skip-link { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; box-sizing: border-box; }
 .ab-tabs { position: fixed; z-index: var(--z-nav); bottom: calc(10px + env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 44px; column-gap: 4px; height: var(--mnav-h); padding: 4px; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-3); }
 @supports (backdrop-filter: blur(16px)) {
   .ab-tabs { background: color-mix(in oklch, var(--surface) 90%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
@@ -143,11 +144,18 @@ button.ui-chip, a.ui-chip { min-height: 44px; min-width: 44px; cursor: pointer; 
 .ui-sheet-header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .ui-sheet-header h2 { margin: 0; font-size: var(--fs-xl); font-weight: 600; line-height: 1.1; }
 .ui-sheet-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px calc(24px + env(safe-area-inset-bottom)); }
-.ui-palette .ui-sheet-body { display: flex; flex: 1; }
+.ui-palette .ui-sheet-body { display: flex; flex: 1 1 auto; overflow: hidden; }
 .ui-palette-content { display: flex; flex-direction: column; width: 100%; min-height: 0; }
-.ui-palette input { flex: none; width: 100%; box-sizing: border-box; min-height: 48px; font: 400 17px/1.45 var(--font); color: var(--text); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 6px; padding: 12px; }
+.ui-palette-field { position: relative; flex: none; }
+.ui-palette input { width: 100%; box-sizing: border-box; min-height: 48px; font: 400 17px/1.45 var(--font); color: var(--text); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 6px; padding: 12px 60px 12px 12px; }
+.ui-palette input::-webkit-search-cancel-button { display: none; }
+.ui-palette-clear { position: absolute; inset: 0 4px 0 auto; margin-block: auto; width: 44px; height: 44px; padding: 0; }
 .ui-palette input:focus { outline: 2px solid var(--accent-fg); outline-offset: 2px; }
-.ui-palette-status { color: var(--text-2); font-size: 13px; margin: 16px 0 8px; }
+.ui-palette-status { flex: none; color: var(--text-2); font-size: 13px; margin: 16px 0 8px; }
+.ui-palette-thumb { width: 88px; height: 56px; flex: none; object-fit: cover; background: var(--surface-2); }
+.ui-palette-loading { display: flex; flex: none; gap: 14px; align-items: center; padding: 12px; }
+.ui-palette-loading .ui-palette-copy { flex: 1; }
+.ui-palette-group-label { display: flex; justify-content: space-between; gap: 12px; }
 #ui-palette-results { overflow-y: auto; min-height: 0; }
 .ui-palette-result { gap: 14px; min-height: 64px; display: flex; align-items: center; padding: 12px; border-radius: 6px; cursor: pointer; font-size: 15px; }
 .ui-palette-group-label { margin: 20px 12px 8px; font: 500 13px/1.45 var(--font); letter-spacing: var(--tr-eyebrow); color: var(--text-2); }
@@ -164,7 +172,7 @@ button.ui-chip, a.ui-chip { min-height: 44px; min-width: 44px; cursor: pointer; 
 .ui-activity[hidden] { display: none; }
 @media (min-width: 1024px) {
   .ui-sheet, .ui-sheet[data-size], .ab-more.ui-sheet { inset: 12px 12px 12px auto; width: min(480px, 50vw); height: calc(100dvh - 24px); max-height: none; border: 1px solid var(--line-strong); border-radius: 20px; padding-top: 0; }
-  .ui-palette.ui-sheet { inset: 0; margin: auto; width: min(640px, 80vw); height: min(640px, 76dvh); }
+  .ui-palette.ui-sheet { inset: 0; margin: auto; width: min(640px, 80vw); height: fit-content; max-height: 70vh; max-height: 70dvh; }
   .ui-palette.ui-sheet[open] { animation: ui-palette-enter var(--dur-base) var(--ease-out); }
   .ui-toast { left: auto; right: 24px; bottom: 24px; max-width: 480px; }
   .ui-activity { left: calc(var(--sidebar-w) + 24px); bottom: 24px; max-width: 320px; }

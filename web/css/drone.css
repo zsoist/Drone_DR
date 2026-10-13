@@ -50,7 +50,7 @@
 .sd-file { display:flex; gap:var(--sp-3); align-items:center; padding:var(--sp-3) 0; border-bottom:1px solid var(--line); }
 .sf-name { overflow-wrap:anywhere; min-width:0; flex:1; font-size:var(--fs-sm); }
 .sf-size,.sf-st { font-size:var(--fs-xs); white-space:nowrap; }
-.dr-up-wrap { max-width:900px; }
+.dr-up-wrap { width:100%; }
 .dr-kind { margin-bottom:var(--sp-5); }
 .dr-up-zone { display:flex; flex-direction:column; gap:var(--sp-4); align-items:flex-start; padding:var(--sp-7); background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--r-lg); }
 .dr-up-zone.over { outline:2px solid var(--accent-fg); }

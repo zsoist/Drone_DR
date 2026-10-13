@@ -971,8 +971,9 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=391'), import('./ui/palette.js?v=391'),
-  import('./ui/activity.js?v=391'), import('./ui/toast.js?v=391'),
+  import('./ui/sheet.js?v=395'), import('./ui/palette.js?v=395'),
+  import('./ui/activity.js?v=395'), import('./ui/toast.js?v=395'),
+  import('./ui/clip-search.js?v=395'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;
@@ -1053,7 +1054,8 @@ function renderShell(active, { navigationOnly = false } = {}) {
     e.preventDefault(); const main = document.getElementById('main');
     main?.focus({ preventScroll: true }); main?.scrollIntoView({ block: 'start' });
   });
-  shellComponents.then(([{ createSheet }, { mountPalette }, { mountActivity }]) => {
+  shellComponents.then(([{ createSheet }, { mountPalette, registerPaletteSource }, { mountActivity }, , { createClipSearchSource }]) => {
+    registerPaletteSource(createClipSearchSource());
     const content = document.createElement('div'); content.className = 'ab-more-content';
     content.innerHTML = `<nav class="ab-more-grid" aria-label="Más secciones">${NAV_MORE.map(n => `<a class="ab-more-tile" href="${n.href}"${cur === n.href ? ' aria-current="page"' : ''}>${icon(n.ic)}<b>${n.label}</b><span>${n.hint}</span></a>`).join('')}</nav>
       <div class="ab-more-footer">

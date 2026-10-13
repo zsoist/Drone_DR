@@ -1,11 +1,15 @@
 /** registerPaletteSource(fn) -> unregister(). fn({query, signal}) returns items or a Promise.
  * Items: {id, label, keywords?, icon?, hint?, group?, href? OR action?}. Use same-origin hrefs.
  * Sources may return unfiltered items; accent-insensitive fuzzy ranking runs here.
+ * Query-specific results set queryMatch: true to keep server relevance order.
+ * Optional thumbnail and suggested fields add media and one group disclosure.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import { createSheet } from './sheet.js?v=391';
-const sources = new Set();
-const listeners = new Set();
+import { createSheet } from './sheet.js?v=395';
+// Pages can retain older version queries during a scoped asset bump.
+// Share registrations across module URLs so their sources still reach the shell.
+const registryKey = Symbol.for('aerobrain.palette.sources');
+const { sources, listeners } = globalThis[registryKey] ||= { sources: new Set(), listeners: new Set() };
 export function registerPaletteSource(fn) {
   sources.add(fn); listeners.forEach(fn => fn());
   return () => { sources.delete(fn); listeners.forEach(fn => fn()); };
@@ -68,13 +72,24 @@ function highlightedLabel(label, query) {
 export function mountPalette(items = []) {
   const content = document.createElement('div'); content.className = 'ui-palette-content';
   const input = document.createElement('input'); input.type = 'search';
+  input.maxLength = 400;
   input.placeholder = 'Buscar en AeroBrain'; input.setAttribute('aria-label', 'Buscar en AeroBrain');
   input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list');
   input.setAttribute('aria-expanded', 'true'); input.setAttribute('autofocus', ''); input.autocomplete = 'off';
+  const field = document.createElement('div'); field.className = 'ui-palette-field';
+  const clear = document.createElement('button'); clear.type = 'button';
+  clear.className = 'ui-button ui-button--quiet ui-palette-clear'; clear.hidden = true;
+  clear.setAttribute('aria-label', 'Borrar búsqueda');
+  if (window.icon) clear.innerHTML = window.icon('close'); else clear.textContent = 'Borrar';
+  clear.addEventListener('click', () => { input.value = ''; input.focus(); search(); });
+  field.append(input, clear);
   const list = document.createElement('div'); list.id = 'ui-palette-results'; list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', 'Resultados'); input.setAttribute('aria-controls', list.id);
   const status = document.createElement('p'); status.className = 'ui-palette-status'; status.setAttribute('role', 'status');
-  content.append(input, status, list);
+  const loading = document.createElement('div'); loading.className = 'ui-palette-loading'; loading.hidden = true;
+  loading.setAttribute('aria-hidden', 'true');
+  loading.innerHTML = '<div class="ui-palette-thumb ui-skeleton"></div><div class="ui-palette-copy"><div class="ui-skeleton ui-skeleton--text"></div><div class="ui-skeleton ui-skeleton--text"></div></div>';
+  content.append(field, status, loading, list);
   const sheet = createSheet({ title: 'Buscar', content, size: 'full', className: 'ui-palette', onClose: () => controller?.abort() });
   let selected = 0, matches = [], controller, revision = 0;
   const current = items.find(item => item.href && destination(item.href)?.href === location.href);
@@ -97,13 +112,17 @@ export function mountPalette(items = []) {
   }
   async function search() {
     const mine = ++revision; controller?.abort(); controller = new AbortController();
-    const query = input.value, signal = controller.signal;
+    const query = input.value.trim(), signal = controller.signal;
+    clear.hidden = !input.value;
+    let pending = query.length >= 2 && sources.size > 0, failed = false;
+    loading.hidden = !pending;
+    list.setAttribute('aria-busy', String(pending));
     matches = []; selected = 0;
     function display(all) {
       const previousId = matches[selected]?.id;
       const seen = new Set();
       const ranked = all.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string' && !seen.has(item.id) && seen.add(item.id))
-        .map(item => ({ item, score: fuzzyScore(query, `${item.label} ${item.keywords || ''}`) }))
+        .map(item => ({ item, score: query && item.queryMatch ? 50 : fuzzyScore(query, `${item.label} ${item.keywords || ''}`) }))
         .filter(r => Number.isFinite(r.score)).sort((a, b) => a.score - b.score).slice(0, 40).map(r => r.item);
       const recent = query.trim() ? [] : readRecents();
       const recentURLs = new Set(recent.map(item => destination(item.href).href));
@@ -114,12 +133,20 @@ export function mountPalette(items = []) {
         const group = document.createElement('div'); group.className = 'ui-palette-group'; group.setAttribute('role', 'group');
         const heading = document.createElement('div'); heading.className = 'ui-palette-group-label';
         heading.id = `ui-palette-group-${groups.findIndex(g => g[0] === name)}`; heading.textContent = name;
+        if (entries.some(item => item.suggested)) {
+          const note = document.createElement('span'); note.textContent = 'Sugerido'; heading.append(note);
+        }
         group.setAttribute('aria-labelledby', heading.id); group.append(heading);
         for (const item of entries) {
           const i = matches.length; matches.push(item);
           const row = document.createElement('div'); row.className = 'ui-palette-result';
           row.id = `ui-palette-option-${i}`; row.setAttribute('role', 'option');
-          if (window.icon) row.innerHTML = window.icon(item.icon || groupIcons[groupOf(item)]);
+          if (item.thumbnail && destination(item.thumbnail)) {
+            const thumbnail = document.createElement('img'); thumbnail.className = 'ui-palette-thumb';
+            thumbnail.alt = ''; thumbnail.src = destination(item.thumbnail).href; thumbnail.loading = 'lazy';
+            thumbnail.addEventListener('error', () => { thumbnail.hidden = true; }, { once: true });
+            row.append(thumbnail);
+          } else if (window.icon) row.innerHTML = window.icon(item.icon || groupIcons[groupOf(item)]);
           const copy = document.createElement('span'); copy.className = 'ui-palette-copy';
           const hint = document.createElement('small');
           hint.textContent = item.hint || (groupOf(item) === 'Acciones' ? 'Acción' : groupOf(item) === 'Secciones' ? `${item.label} · sección` : groupOf(item));
@@ -129,17 +156,23 @@ export function mountPalette(items = []) {
         }
         list.append(group);
       }
-      status.textContent = matches.length ? (query.trim() ? `${matches.length} resultados` : 'Busca un destino o elige una acción') : 'Sin resultados. Prueba con «Viajes» o «Subir».';
+      status.textContent = pending ? 'Buscando clips…' : failed ? 'No se pudieron buscar clips. Puedes abrir una sección o intentar otra búsqueda.'
+        : matches.length ? (query ? `${matches.length} ${matches.length === 1 ? 'resultado' : 'resultados'}` : 'Busca un destino o elige una acción')
+        : query.length < 2 ? 'Escribe al menos dos letras para buscar clips.' : 'Sin resultados. Prueba con «atardecer» o «edificios».';
       select(Math.max(0, matches.findIndex(item => item.id === previousId)));
     }
     display(items);
     // A slow or failed source cannot hide local navigation.
     const all = [...items];
     await Promise.allSettled([...sources].map(async fn => {
-      const result = await fn({ query, signal });
-      if (mine !== revision || signal.aborted) return;
-      if (Array.isArray(result)) { all.push(...result); display(all); }
+      try {
+        const result = await fn({ query, signal });
+        if (mine !== revision || signal.aborted) return;
+        if (Array.isArray(result)) { all.push(...result); display(all); }
+      } catch { if (!signal.aborted) failed = true; }
     }));
+    if (mine !== revision || signal.aborted) return;
+    pending = false; loading.hidden = true; list.setAttribute('aria-busy', 'false'); display(all);
   }
   input.addEventListener('input', search);
   input.addEventListener('keydown', e => {
