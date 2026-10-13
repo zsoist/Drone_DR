@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fmt } from './format.js';
+import { fmt, figure } from './format.js';
 import { term } from './terms.js';
 test('Colombian figures and explicit units', () => {
   assert.equal(fmt.number(1200), '1.200');
@@ -37,4 +37,10 @@ test('missing values do not become invented zero measurements', () => {
   assert.equal(term('splat'), 'Escena fotorrealista');
   assert.equal(term('frontier'), 'Detalle avanzado');
   assert.equal(term('gateRush'), 'Carrera de aros');
+});
+test('formatters stay plain text; standalone figures require an explicit HTML wrapper', () => {
+  for (const format of Object.values(fmt)) assert.doesNotMatch(format(1200), /<|>/);
+  assert.equal(figure(fmt.number(16.24, 1), 'ha'), '<span class="ui-figure">16,2</span> <span class="ui-unit">ha</span>');
+  assert.equal(figure(fmt.clock(219)), '<span class="ui-figure">3:39</span>');
+  assert.equal(figure('<img onerror="bad()">', '<&>'), '<span class="ui-figure">&lt;img onerror=&quot;bad()&quot;&gt;</span> <span class="ui-unit">&lt;&amp;&gt;</span>');
 });

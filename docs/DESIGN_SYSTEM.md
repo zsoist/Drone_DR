@@ -32,7 +32,8 @@ Both fonts use WOFF2, variable weights, and `font-display: swap`.
 The files contain Latin characters, Spanish characters, punctuation, and the euro sign.
 
 Mona Sans has the `tnum` feature after the subset operation.
-Use `.ui-figure` for tabular telemetry and `.ui-unit` for units.
+Use `.ui-figure` for separate statistics, telemetry, and timecodes. Use `.ui-unit` for their units.
+Keep sentences, metadata lines, and their numbers in Mona Sans.
 The older `.ui-figures` class remains an alias.
 Set `--figure-width` when a value needs a fixed width.
 
@@ -205,7 +206,13 @@ Return Spanish labels. Use `action` for a function and `href` for navigation.
 
 Set `group` to Acciones, Secciones, Viajes, Clips, or Mundos.
 Set `icon` to a name from `icons.js`. Set `hint` to short Spanish context.
-Without these fields, the palette supplies a group icon and hint.
+Without these fields, the palette supplies a group icon and a navigation hint.
+Actions need specific hints, such as "Abre el editor" or "Sube videos y fotos".
+An action without a hint shows only its label.
+
+Clip results use place labels from `/api/collections?all=1`, with membership from `clip_ids`.
+If a place label is absent, the source uses the place or trip label of the clip.
+If no name is available, it shows "Lugar sin identificar". Never show coordinates as place names.
 The palette shows up to 40 search results and five recent destinations.
 
 ## Sheet
@@ -318,7 +325,7 @@ Page groups H1–H5 own adoption in their page files.
 ### Formatting
 
 ```js
-import { fmt } from './ui/format.js';
+import { fmt, figure } from './ui/format.js';
 fmt.number(1200);        // 1.200
 fmt.number(16.24, 1);    // 16,2
 fmt.duration(219);      // 3 min 39 s
@@ -329,6 +336,8 @@ fmt.date('2026-07-24');  // 24 jul 2026
 fmt.relative(timestamp); // hace 2 h
 fmt.shutter('1/400.0');  // 1/400
 ```
+
+Every `fmt` method returns plain text. None adds HTML or font classes.
 
 Numbers use `Intl` with `es-CO`. Dates use the Bogotá time zone.
 Pass seconds to `duration`, metres to `distance`, and hectares to `area`.
@@ -343,7 +352,7 @@ Use `fmt.clock(seconds)` only for media positions. `fmt.dur` remains its compati
 Use `duration` for prose, summaries, and flight totals.
 
 The shell remains a classic script. It exposes the same module through `shell.ready`.
-New classic consumers must await that promise before they use `shell.fmt` or `shell.term`.
+New classic consumers must await that promise before they use `shell.fmt`, `shell.figure`, or `shell.term`.
 The legacy `fmt` global also points to the shared formatter.
 ES pages must import the module directly.
 
@@ -352,18 +361,27 @@ await shell.ready;
 const text = shell.fmt.distance(1200);
 ```
 
-Use `.ui-figure` on the number and `.ui-unit` on its unit.
-Keep words outside the figure span. Use tabular numbers for values that update.
+Use `figure(value, unit)` only for a separate statistic, telemetry value, or timecode.
+The helper returns escaped HTML. The unit is optional and uses `.ui-unit`.
+Pass a formatted value. The helper does not format numbers or parse units.
 
-```html
-<span class="ui-figure">16,2</span> <span class="ui-unit">ha</span>
+Do not use it in sentences, card metadata, dates, or count labels.
+Remove page helpers that insert figure spans into these text lines.
+Page groups own these changes in their files.
+
+```js
+summary.textContent = `${fmt.distance(1200)} de recorrido`;
+stat.innerHTML = figure(fmt.number(16.24, 1), 'ha');
+timecode.innerHTML = figure(fmt.clock(219));
 ```
 
 ### Tabs and segmented controls
 
 The rule is **max one tab layer per page**.
-Both components use one active style: an amber underline with neutral text.
-Do not add an active pill, filled segment, or second tab row.
+Tabs use an amber underline with neutral text.
+Segmented settings use a raised neutral surface inside a shared container.
+Do not use tab underlines for settings. Do not add a second tab row.
+
 Use segmented buttons for a setting. Use tabs for panels in the same page.
 Do not make segmented settings into another navigation layer.
 
@@ -408,12 +426,21 @@ container.innerHTML = shell.backLink('Viajes', '/trips.html');
 ```
 
 `Suggested` returns a section with the label Sugerido and text or a DOM node.
+The section must contain the content that its label describes.
+Empty content hides the section, its label, and its actions.
+The content wrapper remains available for asynchronous updates.
+The component shows the section when content arrives. It hides the section if the content becomes empty.
+
+On localhost, the helper also writes a console warning. Whitespace and empty text elements count as empty content.
+Media nodes, such as images and videos, count as content.
+
 Both callbacks are optional. Omit them for read-only explanations, such as search results.
 Use both for editable suggestions. The callbacks own persistence.
 
 The component turns off actions during a save. An error keeps the content and lets the user try again.
 A successful action shows its result. It does not delete owner data.
-Use the same label class, `.ui-suggested-label`, for compact disclosures.
+Use `.ui-suggested-label` for compact disclosures only inside a group that contains the suggested content.
+Never place this label beside an empty region or outside the content group.
 
 `backLink` returns escaped HTML for a same-origin link: arrow, then section name.
 Do not use a bare chevron or browser history for this control.

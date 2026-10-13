@@ -1,15 +1,16 @@
-import { fmt } from './format.js?v=415';
-import { Suggested } from './suggested.js?v=415';
-import { mountTabs } from './tabs.js?v=415';
-import { skinMap, mapSkinOptions } from './map-skin.js?v=415';
-import { skinPlayer } from './player.js?v=415';
-import { registerPaletteSource } from './palette.js?v=415';
+import { fmt, figure } from './format.js?v=417';
+import { Suggested } from './suggested.js?v=417';
+import { mountTabs } from './tabs.js?v=417';
+import { skinMap, mapSkinOptions } from './map-skin.js?v=417';
+import { skinPlayer } from './player.js?v=417';
+import { registerPaletteSource } from './palette.js?v=417';
 await shell.ready;
 const main = renderShell(); main.classList.add('ab-page');
 main.innerHTML = `${shell.backLink('Inicio', '/home.html')}
   <header class="demo-heading"><h1>Componentes compartidos</h1><p>Demostración de controles. El mapa y el video usan un vuelo del archivo. Las cifras de ejemplo no son mediciones del vuelo.</p></header>
   <div class="demo-actions"><button class="ui-button ui-button--secondary" id="demo-palette">Buscar en el archivo</button><button class="ui-button ui-button--quiet" id="demo-more">Más</button></div>
-  <dl class="demo-stats"><div><dt>Duración de ejemplo</dt><dd class="ui-figure">3 <span class="ui-unit">min</span> 39 <span class="ui-unit">s</span></dd></div><div><dt>Distancia de ejemplo</dt><dd class="ui-figure">1,2 <span class="ui-unit">km</span></dd></div><div><dt>Área de ejemplo</dt><dd class="ui-figure">16,2 <span class="ui-unit">ha</span></dd></div></dl>
+  <p class="demo-note" id="demo-prose">Ejemplo: ${fmt.duration(219)} en el aire · ${fmt.distance(1200)} de recorrido · ${fmt.area(16.24)}.</p>
+  <dl class="demo-stats"><div><dt>Duración de ejemplo</dt><dd>${figure(fmt.number(3), 'min')} ${figure(fmt.number(39), 's')}</dd></div><div><dt>Distancia de ejemplo</dt><dd>${figure(fmt.number(1.2, 1), 'km')}</dd></div><div><dt>Área de ejemplo</dt><dd>${figure(fmt.number(16.24, 1), 'ha')}</dd></div></dl>
   <div class="ui-tabs" aria-label="Vista de demostración"><button type="button" role="tab" aria-selected="true" aria-controls="demo-map-panel">Mapa</button><button type="button" role="tab" aria-selected="false" aria-controls="demo-video-panel">Video</button></div>
   <section class="demo-panel" id="demo-map-panel"><h2>Recorrido</h2><div id="demo-map" class="demo-map"></div><p class="demo-note" id="demo-map-note"></p></section>
   <section class="demo-panel demo-player" id="demo-video-panel" hidden><h2>Video del vuelo</h2><video id="demo-video" muted playsinline preload="metadata"></video><p class="demo-note" id="demo-video-note"></p></section>`;

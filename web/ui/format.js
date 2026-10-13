@@ -57,6 +57,11 @@ const bytes = value => !valid(value) ? missing : Number(value) >= 1e9 ? `${numbe
 export const fmt = Object.freeze({ number, duration, clock, distance, area, date, relative, shutter,
   // Compatibility names. Use duration for prose, clock for media timelines.
   dur: clock, km: distance, gb: bytes, hours: duration });
+// Explicit HTML opt-in for standalone stats and timecodes, never prose or metadata lines.
+export function figure(value, unit = '') {
+  const escape = text => String(text ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  return `<span class="ui-figure">${escape(value)}</span>${unit ? ` <span class="ui-unit">${escape(unit)}</span>` : ''}`;
+}
 // The classic shell and ES pages share the same object, including across versioned imports.
 if (typeof window !== 'undefined') window.fmt = fmt;
 export default fmt;
