@@ -11,6 +11,8 @@
   function configure(event, activation) {
     const transition = event.viewTransition;
     if (!transition) return;
+    // A skipped animation still permits navigation. Its ready promise can reject.
+    transition.ready?.catch(() => {});
     const from = activation?.from, entry = activation?.entry;
     const crossfade = reduced.matches || heavy(from?.url || location.href) || heavy(entry?.url || location.href);
     const direction = activation?.navigationType === 'traverse' && entry?.index < from?.index ? 'back' : 'forward';

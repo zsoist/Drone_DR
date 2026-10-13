@@ -5,7 +5,7 @@
  * Optional thumbnail and suggested fields add media and one group disclosure.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import { createSheet } from './sheet.js?v=395';
+import { createSheet } from './sheet.js?v=397';
 // Pages can retain older version queries during a scoped asset bump.
 // Share registrations across module URLs so their sources still reach the shell.
 const registryKey = Symbol.for('aerobrain.palette.sources');
@@ -121,7 +121,10 @@ export function mountPalette(items = []) {
     function display(all) {
       const previousId = matches[selected]?.id;
       const seen = new Set();
-      const ranked = all.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string' && !seen.has(item.id) && seen.add(item.id))
+      // A matched moment takes priority over the same clip in a local index.
+      const matchedIds = new Set(query ? all.filter(item => item?.queryMatch).map(item => item.id) : []);
+      const ranked = all.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string'
+        && (!matchedIds.has(item.id) || item.queryMatch) && !seen.has(item.id) && seen.add(item.id))
         .map(item => ({ item, score: query && item.queryMatch ? 50 : fuzzyScore(query, `${item.label} ${item.keywords || ''}`) }))
         .filter(r => Number.isFinite(r.score)).sort((a, b) => a.score - b.score).slice(0, 40).map(r => r.item);
       const recent = query.trim() ? [] : readRecents();

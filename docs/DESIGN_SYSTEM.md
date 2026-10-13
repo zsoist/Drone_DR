@@ -164,6 +164,7 @@ The source waits 200 ms and cancels the previous request when the query changes.
 It caches up to 64 completed queries in memory for the page session.
 Clip results keep the server order, even without a literal text match.
 Each clip shows its thumbnail, `caption_short`, and matched time.
+Query-specific results replace duplicate entries from the local index.
 
 The Clips heading shows `Sugerido` once. These read-only results need no accept or dismiss controls.
 Enter or a tap opens `flight.html?id=<clip_id>&t=<seconds>`.
