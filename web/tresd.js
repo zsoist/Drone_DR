@@ -2,15 +2,15 @@ import { skinPlayer } from './ui/player.js?v=415';
 import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=415';
 import { fmt } from './ui/format.js?v=415';
 import { term } from './ui/terms.js?v=415';
-import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=415';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=415';
+import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=422';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=422';
   import * as THREE from '/vendor/three180.module.js?v=415';
   import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=415';
   import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=415';
   import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=415';
   import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=415';
   import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=415';
-  import { mountSplatViewer } from '/splatview.js?v=415';
+  import { mountSplatViewer } from '/splatview.js?v=422';
   import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=415';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
@@ -201,7 +201,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=415';
   main.classList.add('page-3d', 'ab-page');
   main.innerHTML = `
     ${areaNav('escenas')}
-    ${pageHead('Tus escenas', '', '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>')}
+    ${pageHead('Escenas', '', '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>')}
 
     <div id="td-tabs" hidden>
       <button class="on" data-tab="projects">Biblioteca</button>
@@ -440,8 +440,8 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=415';
 
   const toolsButton = document.createElement('button');
   toolsButton.className = 'ui-button ui-button--quiet';
-  toolsButton.textContent = 'Más';
-  toolsButton.setAttribute('aria-label', 'Más opciones de escenas');
+  toolsButton.textContent = 'Herramientas';
+  toolsButton.setAttribute('aria-label', 'Herramientas de escenas');
   main.querySelector('.page-head-actions').append(toolsButton);
   toolsButton.onclick = () => openMenu(toolsButton, [
     {id:'projects', label:'Biblioteca', icon:'grid'},

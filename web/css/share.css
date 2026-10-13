@@ -15,14 +15,9 @@
 .sh-ph { position:absolute; bottom:max(var(--sp-4),env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); z-index:3; border:0; padding:0; background:#000; max-width:calc(100% - 32px); }
 .share-page .sh-tabs { display:flex; width:max-content; max-width:100%; margin:0; }
 .share-page .sh-tabs button { color:var(--on-media); min-height:44px; padding:var(--sp-2) var(--sp-4); font-size:var(--fs-sm); white-space:normal; }
-.sh-description { position:absolute; z-index:2; bottom:80px; left:var(--sp-5); width:min(480px,calc(100% - 40px)); max-height:25dvh; overflow:auto; background:#000; font-size:var(--fs-sm); }
 .sh-description:empty { display:none; }
-.sh-description .scene-suggestion { padding:0; margin:0; border:0; }
-.sh-description .scene-suggestion h3:empty { display:none; }
-.sh-description .scene-suggestion p { margin:0; font-size:var(--fs-sm); color:var(--on-media-2); }
-.sh-description .ui-suggested { padding:0; border:0; background:none; gap:var(--sp-1); }
-.sh-description .ui-suggested-label,.sh-description summary { color:var(--on-media-2); }
-.sh-description .scene-suggestion summary { min-height:44px; }
+.sh-description .scene-suggestion { margin:0; padding:0 0 var(--sp-4); }
+.sh-description .scene-suggestion p { margin:var(--sp-2) 0; }
 .sh-spin,.sh-large,.sh-err { width:min(80%,360px); text-align:center; color:var(--on-media-2); }
 .sh-spin .sk { height:4px; }
 .sh-start { position:absolute; bottom:20%; }
@@ -46,10 +41,23 @@
  .sh-head h1 { font-size:var(--fs-md); }
  .sh-head .ui-back { gap:var(--sp-1); }
  .share-page .sh-tabs button { padding-inline:var(--sp-2); font-size:var(--fs-xs); }
- .sh-description { left:var(--sp-4); width:calc(100% - 32px); max-height:22dvh; }
 }
 .share-page .sh-view { height:100dvh; width:100%; }
 .share-page .sv-hud { left:var(--sp-4); right:auto; transform:none; max-width:calc(100% - 88px); }
 .share-page .sv-tip { bottom:150px; }
 /* Override the legacy ID rule, including its phone height constraint. */
 .share-page #sh-view { background:#000; height:100dvh!important; min-height:0!important; }
+
+.sh-head .ui-back { width:44px; min-width:44px; padding:0; justify-content:center; }
+.sh-head { gap:var(--sp-2); padding-inline:var(--sp-4); }
+.sh-head h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.share-page .sh-ph { border-radius:var(--r-lg); padding:var(--sp-1); border:1px solid var(--media-line); }
+.share-page .sh-tabs { background:transparent; border:0; }
+.share-page .sh-tabs button { padding-inline:var(--sp-3); }
+.share-page .viewer-tools,.share-page .sv-hud { right:var(--sp-4); left:auto; top:80px; bottom:auto; transform:none; display:flex; gap:var(--sp-1); padding:var(--sp-1); border:1px solid var(--media-line); border-radius:var(--r-lg); background:var(--media-bg); max-width:calc(100% - 32px); backdrop-filter:none; }
+.share-page .sv-hud { top:140px; flex-wrap:wrap; width:max-content; }
+.share-page .viewer-tools button,.share-page .sv-hud button { width:44px; height:44px; padding:0; border:0; border-radius:var(--r-sm); background:transparent; color:var(--on-media); }
+.share-page .sv-hud .sv-slider { display:flex; }
+.share-page .sv-hud .sv-sep { display:none; }
+.share-page .sv-hud button.on,.share-page .viewer-tools button[aria-expanded=true] { color:var(--accent-fg); background:var(--surface-2); }
+.share-page .viewer-tools button[data-camera=full] { width:auto; padding-inline:var(--sp-3); }

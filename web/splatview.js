@@ -1,5 +1,5 @@
 import { fmt } from './ui/format.js?v=415';
-import { reducedMotion } from './scene-improve-ui.js?v=415';
+import { reducedMotion } from './scene-improve-ui.js?v=422';
 // splatview.js — visor PREMIUM de gaussian splats, compartido por tresd.js y share.js.
 // MOTOR: Spark 2.1 (r180) — migrado desde GaussianSplats3D 0.4.7 (fase E del
 // plan FLIGHTVERSE; el autor de GS3D descontinuó la lib y recomienda Spark).
@@ -21,12 +21,13 @@ const I = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
+  tools: '<path d="M4 7h16M4 17h16M8 4v6M16 14v6"/>',
   rule: '<path d="M3 17 17 3l4 4L7 21z"/><path d="m8.5 12.5 1.5 1.5M11.5 9.5l1.5 1.5M14.5 6.5 16 8"/>',
 };
 const btn = (id, label, path) =>
   `<button data-sv="${id}" title="${label}" aria-label="${label}"><svg viewBox="0 0 24 24">${path}</svg></button>`;
 
-export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null, signal = null } = {}) {
+export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, unitsMeters = null, signal = null, compact = false } = {}) {
   const abortErr = () => new DOMException('carga de splat cancelada', 'AbortError');
   if (signal?.aborted) throw abortErr();
   const { SparkRenderer, SplatMesh } = await import('/vendor/spark.module.js?v=415');
@@ -332,14 +333,16 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   nav.className = 'viewer-tools sv-nav';
   nav.innerHTML =
     btn('home', 'Reiniciar vista (R)', I.home) +
-    btn('zin', 'Acercar', I.plus) +
-    btn('zout', 'Alejar', I.minus) +
-    btn('rot', 'Auto-rotar', I.rot) +
+    (compact ? btn('tools', 'Herramientas de la vista', I.tools) :
+      btn('zin', 'Acercar', I.plus) + btn('zout', 'Alejar', I.minus) + btn('rot', 'Girar automáticamente', I.rot)) +
     btn('full', 'Pantalla completa (F)', I.full);
   host.appendChild(nav);
   const hud = document.createElement('div');
   hud.className = 'sv-hud';
+  hud.hidden = compact;
+  if (compact) nav.querySelector('[data-sv="tools"]').setAttribute('aria-expanded', 'false');
   hud.innerHTML =
+    (compact ? btn('zin', 'Acercar', I.plus) + btn('zout', 'Alejar', I.minus) + btn('rot', 'Girar automáticamente', I.rot) : '') +
     btn('inspect', 'Acercamiento de detalle', I.target) +
     btn('measure', 'Medir distancia — 2 clics sobre el suelo (≈ metros); el 3º inicia otra medición', I.rule) +
     `<span class="sv-sep"></span>` +
@@ -361,7 +364,11 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
   const handleViewerAction = e => {
     const b = e.target.closest('[data-sv]'); if (!b) return;
     const k = b.dataset.sv;
-    if (k === 'home') {
+    if (k === 'tools') {
+      hud.hidden = !hud.hidden;
+      b.setAttribute('aria-expanded', String(!hud.hidden));
+    }
+    else if (k === 'home') {
       ctrl.minDistance = homeMin;
       animateTo(homeState.target, homeState.pos, homeMin);
       cam.fov = homeState.fov; cam.updateProjectionMatrix();
@@ -414,6 +421,12 @@ export async function mountSplatViewer(host, splatUrl, { bytes = 0, onStatus, un
     if (!holder.isConnected) return;
     if (!host.contains(document.activeElement) && e.key !== 'Escape') return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;          // Cmd+F / Ctrl± son del navegador
+    if (e.key === 'Escape' && compact && !hud.hidden && !document.querySelector('dialog[open]')) {
+      hud.hidden = true;
+      const tools = nav.querySelector('[data-sv=tools]');
+      tools.setAttribute('aria-expanded', 'false'); tools.focus();
+      return;
+    }
     if (e.key === 'Escape' && host.classList.contains('sv-fullscreen')) { toggleFull(); return; }
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;

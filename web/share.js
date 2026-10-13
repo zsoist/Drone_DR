@@ -1,8 +1,7 @@
 import { fmt } from './ui/format.js?v=415';
 import { term } from './ui/terms.js?v=415';
-import { mountTabs } from './ui/tabs.js?v=415';
-import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=415';
-import { loadIsCurrent } from './scene-improve-state.js?v=415';
+import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=422';
+import { loadIsCurrent } from './scene-improve-state.js?v=422';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
 import * as THREE from '/vendor/three180.module.js?v=415';
@@ -10,7 +9,7 @@ import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js
 import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=415';
 import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=415';
 import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=415';
-import { mountSplatViewer } from '/splatview.js?v=415';
+import { mountSplatViewer } from '/splatview.js?v=422';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,6 +28,10 @@ document.body.innerHTML = `<div class="share-main">
 </div>
 <svg class="sh-defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="sh-hard" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncA type="discrete" tableValues="0 1"/></feComponentTransfer></filter></svg>`;
 const body = document.getElementById('sh-body');
+const back = document.querySelector('.sh-head .ui-back');
+back.setAttribute('aria-label', 'Volver a Escenas');
+back.title = 'Volver a Escenas';
+back.replaceChildren(back.querySelector('svg'));
 
 async function jfetch(url) {
   const r = await fetch(url);
@@ -106,10 +109,10 @@ body.innerHTML = `
     <div class="ph sh-ph">
 
       <a id="sh-volar" class="ui-button ui-button--quiet sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" hidden>${icon('drone')} Volar en 3D</a>
-      <div class="ui-tabs sh-tabs" role="tablist" aria-label="Tipo de visor">
-        <button class="on" data-v="cloud" role="tab" aria-selected="true">${term('cloud')}</button>
-        ${meshOk ? `<button data-v="mesh" role="tab" aria-selected="false">${term('mesh')}</button>` : ''}
-        ${splat ? `<button data-v="splat" role="tab" aria-selected="false">${term('splat')}</button>` : ''}
+      <div class="ui-segmented sh-tabs" role="group" aria-label="Tipo de visor">
+        <button class="on" data-v="cloud" aria-pressed="true">${term('cloud')}</button>
+        ${meshOk ? `<button data-v="mesh" aria-pressed="false">${term('mesh')}</button>` : ''}
+        ${splat ? `<button data-v="splat" aria-pressed="false">${term('splat')}</button>` : ''}
       </div>
     </div>
     <div id="sh-view" class="sh-view"><img class="scene-poster" src="${base}/${esc(meta.ortho_asset || 'ortho.jpg')}" alt="Vista previa de ${esc(sceneTitle(meta.title || 'la escena'))}" data-transition-key="world-${esc(cid)}"><button class="ui-button ui-button--primary sh-start" id="sh-start">Cargar escena</button></div>
@@ -184,6 +187,7 @@ if (splat && splats.length > 1) {
 }
 
 const options = document.querySelector('.sh-actions');
+options.prepend(document.getElementById('sh-description'));
 options.append(document.getElementById('sh-volar'));
 document.getElementById('sh-options').onclick = e => {
   options.hidden = false;
@@ -447,7 +451,7 @@ const loaders = {
     let handle;
     try {
       handle = await mountSplatViewer(view, splatUrl(splat),
-        { bytes: splat.bytes, signal: ac.signal, onStatus: t => { if (st) st.textContent = t; },
+        { bytes: splat.bytes, compact: true, signal: ac.signal, onStatus: t => { if (st) st.textContent = t; },
           // mismo criterio que tresd.js: el lane CUDA entrena normalizado → unidades relativas
           unitsMeters: splat.backend ? !/cuda|nvidia/i.test(splat.backend) : null });
     } catch (err) {
@@ -469,10 +473,10 @@ function loadView(b, confirmed = false) {
   // el módulo premium expone su propio dispose (limpia HUD + listeners + viewer)
   if (view._splatDispose) { const d = view._splatDispose; view._splatDispose = null; view._splatViewer = null; try { d(); } catch {} }
   else if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
-  document.querySelectorAll('.sh-tabs button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
+  document.querySelectorAll('.sh-tabs button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
   const bytes = b.dataset.v === 'splat' ? splat?.bytes : b.dataset.v === 'cloud' ? meta.cloud_bytes : meta.mesh_bytes;
   if (!confirmed && matchMedia('(max-width:600px)').matches && bytes > 80 * 1024 * 1024) {
-    view.innerHTML = `<div class="sh-large"><p>Esta vista descarga <span class="ui-figure">${sizeOf(bytes)}</span>.</p><button class="ui-button ui-button--primary" id="sh-start">Cargar escena · ${sizeOf(bytes)}</button></div>`;
+    view.innerHTML = `<div class="sh-large"><p>Esta vista descarga ${sizeOf(bytes)}.</p><button class="ui-button ui-button--primary" id="sh-start">Cargar escena · ${sizeOf(bytes)}</button></div>`;
     document.getElementById('sh-start').onclick = () => loadView(b, true);
     return;
   }
@@ -483,5 +487,8 @@ function loadView(b, confirmed = false) {
     document.getElementById('sh-retry').onclick = () => loadView(b, true);
   });
 }
-const tabs = mountTabs(document.querySelector('.sh-tabs'), {onChange:loadView});
-tabs.select(document.querySelector(`.sh-tabs [data-v="${splat ? 'splat' : 'cloud'}"]`));
+document.querySelector('.sh-tabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-v]');
+  if (button && button.getAttribute('aria-pressed') !== 'true') loadView(button);
+});
+loadView(document.querySelector(`.sh-tabs [data-v="${splat ? 'splat' : 'cloud'}"]`));
