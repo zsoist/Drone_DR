@@ -21,12 +21,14 @@
   <meta name="twitter:card" content="summary">
   <link rel="stylesheet" href="style.css?v=429">
   <link rel="stylesheet" href="css/p.css?v=429">
-  <link rel="stylesheet" href="vendor/maplibre-gl.css">
-  <script src="vendor/maplibre-gl.js" defer></script>
   <script src="icons.js?v=429"></script>
+
+  <link rel="preload" href="vendor/fonts/mona-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/shell.css?v=429">
+  <link rel="stylesheet" href="ui/skeleton.css?v=429">
 </head>
 <body>
-  <div class="prop" id="root"><p class="p-loading" role="status">Cargando propiedad…</p></div>
-  <script src="p.js?v=429" defer></script>
+  <main class="prop ab-page" id="root" aria-busy="true"><p role="status">Cargando propiedad…</p><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></main>
+  <script type="module" src="p.js?v=429" defer></script>
 </body>
 </html>

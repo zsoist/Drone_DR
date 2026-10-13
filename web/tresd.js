@@ -1,3 +1,9 @@
+import { skinPlayer } from './ui/player.js?v=429';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=429';
+import { fmt } from './ui/format.js?v=429';
+import { term } from './ui/terms.js?v=429';
+import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=429';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=429';
   import * as THREE from '/vendor/three180.module.js?v=429';
   import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=429';
   import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=429';

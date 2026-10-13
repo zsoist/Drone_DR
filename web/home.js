@@ -134,23 +134,5 @@ async function loadRecent(rows) {
     const recent = document.getElementById('home-recent');
     const wrap = suggestedContent(recent.outerHTML); recent.replaceWith(wrap);
   }
-  document.addEventListener('visibilitychange', sync);
-  sync();
-}
-
-// El dron 3D (~1.3 MB) es decorativo: en móvil / táctil / ahorro de datos no se monta y el escenario se oculta.
-// El sprite de píxeles solo aparece si el GLB falla de verdad; mientras carga no se muestra nada.
-function mountDroneWhenIdle() {
-  const stage = document.getElementById('home-drone-stage');
-  if (!stage) return;
-  const lite = navigator.connection?.saveData || matchMedia('(max-width: 680px)').matches || matchMedia('(pointer: coarse)').matches;
-  if (lite) { stage.classList.add('is-off'); return; }
-  const fail = () => stage.classList.add('is-failed');
-  const mount = () => import('./home-drone.js?v=429')
-    .then(mod => mod.mountHomeDrone?.('#home-drone-stage'))
-    .then(res => { if (!res) fail(); })
-    .catch(fail);
-  const idle = () => ('requestIdleCallback' in window) ? requestIdleCallback(mount, { timeout: 4000 }) : setTimeout(mount, 1200);
-  if (document.readyState === 'complete') idle(); else addEventListener('load', idle, { once: true });
 }
 load();

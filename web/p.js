@@ -50,45 +50,10 @@ async function load() {
       copy.append(list);
     } else { const node=document.createElement('p'); node.textContent=paragraph; copy.append(node); }
   }
-  document.title = `${(p.titulo || '').replace(/[<>]/g, '')} — en venta`;
-  const video = p.video ? (p.video.endsWith('.mp4') ? `data/reels/${p.video}` : `data/proxies/${p.video}.mp4`) : null;
-  const poster = p.cover?.quality?.status === 'ok' ? p.cover.frame_url : '';
-  const frames = (p.gallery || []).filter(frame => frame.quality?.status === 'ok')
-    .map(frame => frame.frame_url);
-  const specs = [
-    [p.area, 'm²'], [p.habitaciones, 'habitaciones'], [p.banos, 'baños'],
-    [p.parqueaderos, 'parqueaderos'], [p.estrato, 'estrato'],
-  ].filter(([v]) => v);
-  const wa = p.whatsapp ? `https://wa.me/${String(p.whatsapp).replace(/\D/g, '')}?text=${encodeURIComponent('Hola, me interesa: ' + (p.titulo || ''))}` : '';
-  const tel = p.telefono ? String(p.telefono).replace(/[^\d+]/g, '') : '';
-  root.innerHTML = `
-    <div class="hero">${video
-      ? `<video src="${video}" controls playsinline webkit-playsinline preload="metadata" ${poster ? `poster="${poster}"` : ''} autoplay muted loop></video>`
-      : poster ? `<img src="${poster}" alt="Vista aérea de ${esc(p.titulo || 'la propiedad')}">` : '<div class="hero-empty"></div>'}</div>
-    <header class="head">
-      <h1>${esc(p.titulo) || 'Propiedad en venta'}</h1>
-      ${p.ubicacion ? `<div class="loc">${icon('pin')}<span>${esc(p.ubicacion)}</span></div>` : ''}
-      ${p.precio ? `<div class="price">${esc(p.precio)}</div>` : ''}
-    </header>
-    ${specs.length ? `<div class="specs">${specs.map(([v, l]) => `<div class="spec"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div>` : ''}
-    ${p.descripcion ? `<section class="sec"><h2 class="sec-t">Descripción</h2><div class="desc">${esc(p.descripcion)}</div></section>` : ''}
-    ${p.lat && p.lon ? `<section class="sec"><h2 class="sec-t">Ubicación</h2><div id="pmap" role="img" aria-label="Mapa de la ubicación"></div></section>` : ''}
-    ${frames.length ? `<section class="sec"><h2 class="sec-t">Vistas aéreas</h2><div class="gal">
-      ${frames.map(f => `<a href="${f}" target="_blank" rel="noopener"><img src="${f}" loading="lazy" alt="Vista aérea de la propiedad"></a>`).join('')}</div></section>` : ''}
-    <div class="brandline">Recorrido aéreo real capturado con dron · metislab.work</div>
-    ${wa || tel ? `<div class="cta">
-      ${wa ? `<a class="btn primary lg" href="${wa}">WhatsApp</a>` : ''}
-      ${tel ? `<a class="btn lg" href="tel:${tel}">Llamar</a>` : ''}
-    </div>` : ''}`;
-  if (p.lat && p.lon) {
-    const map = new maplibregl.Map({
-      cooperativeGestures: true,               // página de cliente: el mapa no debe secuestrar el scroll
-      container: 'pmap', center: [p.lon, p.lat], zoom: 16.5,
-      style: { version: 8, sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Esri' } }, layers: [{ id: 'sat', type: 'raster', source: 'sat' }] },
-      attributionControl: { compact: true },
-    });
-    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1E7FD1';
-    new maplibregl.Marker({ color: accent }).setLngLat([p.lon, p.lat]).addTo(map);
+  if (text) description.append(generated ? Suggested({content:copy}) : copy);
+  root.setAttribute('aria-busy','false');
+  function openMedia(title, node, opener, player) {
+    const view=createSheet({title,content:node,size:'full',className:'p-media-sheet',onClose:()=>{player?.destroy();node.querySelector('video')?.pause();view.destroy();}}); view.open(opener);
   }
   document.getElementById('p-video')?.addEventListener('click',e=>{
     const content=document.createElement('div'); content.innerHTML=`<video playsinline preload="metadata" poster="${hero}" src="${video}"></video>`;
