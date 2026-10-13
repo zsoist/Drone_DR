@@ -30,3 +30,7 @@
 @media(max-width:820px) { .gd-head { align-items:flex-start; flex-direction:column; } }
 .gd-topic .gd-intro { margin-bottom:var(--sp-5); }
 .gd-instructions .gd-note { padding-bottom:0; }
+
+.gd-media { margin-bottom:var(--sp-5); color:var(--text-2); font-size:var(--fs-sm); }
+.gd-media img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; }
+.gd-media .ui-suggested { margin:0; }

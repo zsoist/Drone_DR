@@ -1,23 +1,16 @@
-import { mountTabs } from './ui/tabs.js?v=423';
-import { fmt } from './ui/format.js?v=423';
-// Drone equipment, read-only library statistics, SD import, and direct upload.
+import { fmt } from './ui/format.js?v=428';
+// Drone equipment, archive statistics, and SD or grouped-photo imports.
 const main = renderShell('drone.html');
 main.classList.add('ab-page', 'dr-page');
 const drMotionMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-base')) || 220;
 main.innerHTML = `
   <header class="dr-head"><div><h1>Dron</h1><p>Tu equipo y el material de cada vuelo.</p></div></header>
-  <figure class="dr-footage" id="dr-footage" hidden></figure>
-
-  <div class="ui-tabs dr-tabs" id="dr-tabs" aria-label="Vía de importación">
-    <button role="tab" aria-selected="true" aria-controls="dr-sd" data-tab="sd" data-tip="La vía recomendada: los .SRT traen GPS, mapa y telemetría">${icon('db')} Tarjeta SD</button>
-    <button role="tab" aria-selected="false" aria-controls="dr-up" data-tab="up" data-tip="Videos o fotos desde iPhone/iPad o arrastrando en PC — sin telemetría de vuelo">${icon('dl')} Subida directa</button>
-  </div>
 
   <section class="dr-mod" id="dr-sd" data-mod="sd">
     <div class="dr-stats" id="d-stats"></div>
 
     <div class="panel dr-panel">
-      <div class="ph">
+      <div class="ph"><h2>Tarjeta SD</h2>
         <span class="spacer" style="flex:1"></span>
         <button class="ui-button ui-button--secondary" id="sd-rescan" data-tip="Vuelve a buscar tarjetas montadas (carpeta DCIM)">${icon('loop')} Escanear</button>
       </div>
@@ -27,29 +20,8 @@ main.innerHTML = `
     <p class="dr-note">Conserva la tarjeta hasta revisar tus archivos importados. <a href="guia.html#g-importar">Ver guía de importación</a></p>
   </section>
 
-  <section class="dr-mod" id="dr-up" data-mod="up" hidden>
-    <div class="dr-up-wrap">
-      <label class="dr-kind">Tipo de archivo <select class="ctl" id="up-kind"><option value="video">Videos</option><option value="foto">Fotos</option></select></label>
-
-      <div class="dr-up-panes" id="up-panes">
-        <div class="dr-up-pane" data-pane="video">
-          <div class="dr-up-zone rise" id="drop" data-tip="También puedes soltar varios a la vez — van en cola">
-
-            ${icon('dl')}
-            <p class="dr-up-t">Subir videos</p><button type="button" class="ui-button ui-button--primary" id="video-pick">Elegir videos</button>
-            <p class="dr-up-s">En iPhone y iPad se abre tu app de <b>Fotos</b> directamente.</p>
-
-            <input type="file" id="file" multiple accept="video/*,.mts,.mkv" hidden>
-          </div>
-
-
-          <p class="dr-note">Esta vía no incluye la ruta ni los datos del vuelo. Para conservarlos junto al video,
-            importa desde la <b>Tarjeta SD</b>.</p>
-
-          <div id="queue" class="dr-up-queue"></div>
-        </div>
-
-        <div class="dr-up-pane" data-pane="foto" hidden>
+  <section id="dr-up" hidden>
+        <div class="dr-up-pane">
           <div class="dr-up-zone rise" id="ph-drop" role="button" tabindex="0" aria-label="Elegir fotos o soltar una carpeta"
                data-tip="Suelta fotos sueltas o una carpeta entera (cada subcarpeta es una pasada)">
 
@@ -94,18 +66,23 @@ main.innerHTML = `
 
           <p class="dr-note">Las fotos conservan la ubicación, los datos de la cámara y sus nombres originales. Mantén esos nombres para agrupar cada pasada.</p>
         </div>
-      </div>
-    </div>
   </section>
 
   <section class="dr-fleet" aria-label="Tus drones"><div class="dr-equipment"><h2>Tu equipo</h2><p>DJI Flip · Neo 2</p><button class="ui-button ui-button--secondary" id="dr-specs">Ver ficha del equipo</button></div><div id="dr-library" class="dr-library" aria-busy="true"><dl>${['Vuelos en el archivo','Video en el archivo','Ubicados en Viajes'].map(label=>`<div><dt>${label}</dt><dd class="ui-skeleton" aria-hidden="true">&nbsp;</dd></div>`).join('')}</dl></div></section>
 
-  <div class="dr-recent"><h2>Importaciones</h2><p>Sigue el progreso y revisa los resultados en Sistema.</p><a class="ui-button ui-button--secondary" href="system.html">Ver trabajos</a></div>`;
+  <aside class="dr-recent"><h2>Desde otro dispositivo</h2><p>Sube videos y fotos desde tu teléfono o computador.</p><a class="ui-button ui-button--secondary" href="subir.html">Subida directa</a><button class="ui-button ui-button--secondary" id="dr-photo-set">Importar grupo de fotos</button><a class="ui-button ui-button--secondary" href="system.html">Ver trabajos en Sistema</a></aside>`;
 
-// Import methods are one navigation layer; file type remains a setting.
-const drTabs = document.getElementById('dr-tabs');
-mountTabs(drTabs);
-if (new URLSearchParams(location.search).get('via') === 'subir') drTabs.querySelector('[data-tab="up"]').click();
+// Keep old upload links working through the single upload page.
+if (new URLSearchParams(location.search).get('via') === 'subir') location.replace('subir.html');
+document.getElementById('dr-photo-set').addEventListener('click', async e => {
+  const opener=e.currentTarget, content=document.getElementById('dr-up');
+  const {createSheet}=await import('./ui/sheet.js?v=428');
+  content.hidden=false;
+  const view=createSheet({title:'Importar grupo de fotos',content,size:'full',onClose:()=>{
+    content.hidden=true; main.append(content); view.destroy();
+  }});
+  view.open(opener);
+});
 
 let volumes = [];
 
@@ -165,7 +142,7 @@ async function scan() {
         <span class="spacer" style="flex:1"></span>
         <div class="sd-acts">
           ${nuevos.length
-            ? `<button class="ui-button ui-button--${v.volume === primaryVolume ? 'primary' : 'secondary'}" data-import="${esc(v.volume)}">${icon('dl')} Importar ${nuevos.length}</button>`
+            ? `<button class="ui-button ui-button--${v.volume === primaryVolume ? 'primary' : 'secondary'}" data-import="${esc(v.volume)}">${icon('dl')} Importar (${fmt.number(nuevos.length)} nuevos)</button>`
             : `<span class="ui-chip sd-ok">${icon('check')} Sin archivos nuevos</span>`}
           <button class="ui-button ui-button--quiet" data-optimize="${esc(v.volume)}">Sobre la limpieza</button>
         </div>
@@ -280,7 +257,7 @@ document.getElementById('sd-list').addEventListener('click', e => {
 // Import includes photos. Keep originals until content verification is available.
 async function openImport(v) {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=423');
+  const { createSheet } = await import('./ui/sheet.js?v=428');
   const files = [...v.videos, ...v.photos].filter(x => !x.in_vault);
   const content = document.createElement('form'); content.className = 'dr-import-form';
   content.innerHTML = `<p>Elige los archivos que quieres importar. Los originales se conservan en la tarjeta.</p><div class="dr-import-files">${files.map(f=>`<label><input type="checkbox" checked data-rel="${esc(f.rel)}"><span><b>${esc(f.name)}</b><small>${gb(f.bytes)}${f.srt ? ' · con GPS' : ''}</small></span></label>`).join('')}</div><label for="sd-drone">Carpeta de destino</label><input class="ctl" id="sd-drone" value="${esc(v.volume)}" maxlength="40" required><p class="dr-import-error" role="alert"></p><button type="submit" class="ui-button ui-button--primary">Importar archivos</button>`;
@@ -299,126 +276,10 @@ async function openImport(v) {
 }
 async function openOptimize() {
   const opener = document.activeElement;
-  const { createSheet } = await import('./ui/sheet.js?v=423');
+  const { createSheet } = await import('./ui/sheet.js?v=428');
   const content=document.createElement('p'); content.textContent='La limpieza está deshabilitada hasta que el servidor pueda verificar el contenido completo de cada copia. Conserva los originales en la tarjeta.';
   const view=createSheet({title:'Conserva tus originales',content,size:'peek',onClose:()=>view.destroy()}); view.open(opener);
 }
-
-// ================= subida directa (fusionado de Subir v2) =================
-const drop = document.getElementById('drop');
-const fileIn = document.getElementById('file');
-const upQueue = document.getElementById('queue');
-
-
-document.getElementById('video-pick').addEventListener('click', () => fileIn.click());
-drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-drop.addEventListener('drop', async e => {
-  e.preventDefault(); drop.classList.remove('over');
-  const files = [...e.dataTransfer.files];   // ANTES del await: el drag data store se vacía al retornar
-  routeDropped(files, e.dataTransfer);
-});
-fileIn.addEventListener('change', () => { routeDropped([...fileIn.files]); fileIn.value = ''; });
-// fotos soltadas en la zona de video: en vez de rechazarlas, van al set de fotos
-function routeDropped(files, dt) {
-  const isPhoto = f => PH_EXT.test(f.name);
-  const hasDir = dt && [...(dt.items || [])].some(i => i.webkitGetAsEntry?.()?.isDirectory);
-  if (hasDir || (files.length && files.every(isPhoto))) { setUpKind('foto'); phStageEntries(dt ? phCollect(dt) : files.map(f => ({ file: f, rel: f.name }))); return; }
-  files.forEach(upEnqueue);
-}
-
-const upQ = [];
-let upActive = null;
-
-function upEnqueue(file) {
-  if (!/\.(mp4|mov|m4v|mkv|avi|mts|webm)$/i.test(file.name)) {
-    toast(`"${file.name}" no es un formato de video soportado.`); return;
-  }
-  upQ.push({ file, status: 'pendiente', pct: 0, speed: 0, eta: 0, loaded: 0, xhr: null });
-  upRender(); upPump();
-}
-function upPump() {
-  if (upActive || !upQ.some(i => i.status === 'pendiente')) return;
-  upActive = upQ.find(i => i.status === 'pendiente');
-  upStart(upActive);
-}
-function upStart(item) {
-  item.status = 'subiendo';
-  const xhr = item.xhr = new XMLHttpRequest();
-  xhr.open('POST', `/upload?name=${encodeURIComponent(item.file.name)}`);
-  xhr.setRequestHeader('X-AeroBrain-CSRF', '1');
-  let lastT = performance.now(), lastL = 0;
-  xhr.upload.onprogress = e => {
-    const now = performance.now(), dt = (now - lastT) / 1000;
-    if (dt > 0.4) {
-      const inst = (e.loaded - lastL) / dt;
-      item.speed = item.speed ? item.speed * 0.6 + inst * 0.4 : inst;
-      item.eta = item.speed > 0 ? (e.total - e.loaded) / item.speed : 0;
-      lastT = now; lastL = e.loaded;
-    }
-    item.pct = e.total > 0 ? Math.round((e.loaded / e.total) * 100) : 100;   // zero-byte = completo, no NaN%
-    item.loaded = e.loaded;
-    upPaint(item);
-  };
-  const finish = st => { item.status = st; item.xhr = null; upActive = null; upRender(); upPump(); };
-  xhr.onload = () => {
-    if (xhr.status === 200) finish('procesando');
-    else if (xhr.status === 401) { item.err = 'sesión expirada'; finish('error'); redirectToLogin(); }
-    else {
-      let msg = '';
-      try { msg = JSON.parse(xhr.responseText || '{}').error || ''; } catch { /* cuerpo HTML (Cloudflare 413/502) */ }
-      item.err = String(msg || `error ${xhr.status}`).slice(0, 200);
-      finish('error');
-    }
-  };
-  xhr.onerror = () => { item.err = 'error de red — reintenta'; finish('error'); };
-  xhr.onabort = () => finish('cancelado');
-  xhr.send(item.file);
-  upRender();
-}
-const UP_STATE = {
-  pendiente: { ic: 'clock', cls: '' }, subiendo: { ic: 'dl', cls: 'run' },
-  procesando: { ic: 'gauge', cls: 'ok' }, cancelado: { ic: 'close', cls: 'off' },
-  error: { ic: 'warn', cls: 'bad' },
-};
-function upRender() {
-  upQueue.innerHTML = upQ.map((it, i) => `
-    <div class="dr-up-card ${UP_STATE[it.status].cls}">
-      <span class="dr-up-ic">${icon(UP_STATE[it.status].ic)}</span>
-      <div class="dr-up-info">
-        <div class="dr-up-name">${esc(it.file.name)}</div>
-        <div class="dr-up-meta" data-meta="${i}">${upMeta(it)}</div>
-        <div class="dr-up-bar"><i data-bar="${i}" style="--p:${it.pct / 100}"></i></div>
-      </div>
-      <div class="dr-up-acts">
-        ${it.status === 'subiendo' ? `<button class="ui-button ui-button--secondary" data-cancel="${i}">Cancelar</button>` : ''}
-        ${it.status === 'error' || it.status === 'cancelado' ? `<button class="ui-button ui-button--secondary" data-retry="${i}">${icon('loop')} Reintentar</button>` : ''}
-      </div>
-    </div>`).join('');
-}
-function upMeta(it) {
-  const mb = v => fmt.number(v / 1e6);
-  if (it.status === 'subiendo')
-    return `${it.pct}% · ${mb(it.loaded)}/${mb(it.file.size)} MB · ${fmt.number(it.speed / 1e6, 1)} MB/s · ~${fmt.duration(Math.min(5940, it.eta))} restantes`;
-  if (it.status === 'procesando') return `${mb(it.file.size)} MB · preparación y análisis en curso`;
-  if (it.status === 'error') return esc(it.err || 'error');
-  return `${mb(it.file.size)} MB`;
-}
-function upPaint(it) {
-  const i = upQ.indexOf(it);
-  const m = upQueue.querySelector(`[data-meta="${i}"]`);
-  const b = upQueue.querySelector(`[data-bar="${i}"]`);
-  if (m) m.textContent = upMeta(it);
-  if (b) b.style.setProperty('--p', it.pct / 100);
-}
-upQueue.addEventListener('click', e => {
-  const c = e.target.closest('[data-cancel]');
-  if (c) { upQ[+c.dataset.cancel]?.xhr?.abort(); return; }
-  const r = e.target.closest('[data-retry]');
-  if (r) { const it = upQ[+r.dataset.retry]; if (it) { it.status = 'pendiente'; it.pct = 0; it.err = null; upRender(); upPump(); } }
-});
-window.addEventListener('beforeunload', e => { if (upActive || phBusy) { e.preventDefault(); e.returnValue = ''; } });
-
 
 // ================= subida directa de FOTOS (set para malla 3D) =================
 // Una foto por petición a /api/photo_set_upload → raw/<set>/<pasada>/<nombre> (layout de la SD).
@@ -428,15 +289,7 @@ const phEl = id => document.getElementById(id);
 let phItems = [];          // {file, rel, pass, status: 'pend'|'sub'|'ok'|'dup'|'err', err}
 let phBusy = false, phStop = false, phXhr = null, phFatal = '';
 
-function setUpKind(kind) {
-  phEl('up-kind').value = kind;
-  document.querySelectorAll('#up-panes [data-pane]').forEach(p => { p.hidden = p.dataset.pane !== kind; });
-  try { localStorage.setItem('ab_up_kind', kind); } catch { /* modo privado */ }
-}
-phEl('up-kind').addEventListener('change', e => setUpKind(e.target.value));
-try {
-  if (localStorage.getItem('ab_up_kind') === 'foto' && new URLSearchParams(location.search).get('via') === 'subir') setUpKind('foto');
-} catch { /* sin storage */ }
+window.addEventListener('beforeunload', e => { if (phBusy) { e.preventDefault(); e.returnValue = ''; } });
 
 const phMB = v => v >= 1e9 ? fmt.gb(v) : fmt.number(v / 1e6) + ' MB';
 const phDefaultSet = () => 'Fotos ' + new Date().toISOString().slice(0, 10);
@@ -633,7 +486,7 @@ phEl('ph-dir').addEventListener('change', e => {
 // The manifest has no drone assignment. Keep recording formats in the equipment sheet.
 let captureFormats = [];
 document.getElementById('dr-specs').addEventListener('click',async e=>{
-  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=423');
+  const opener=e.currentTarget; const {createSheet}=await import('./ui/sheet.js?v=428');
   const content=document.createElement('div'); content.className='dr-specs';
   content.innerHTML='<h3>DJI Flip</h3><dl><div><dt>Sensor</dt><dd>1/1,3 pulgadas</dd></div><div><dt>Foto</dt><dd>48 MP · JPEG y DNG</dd></div><div><dt>Vuelo máximo</dt><dd>31 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://www.dji.com/flip/specs" target="_blank" rel="noopener">Especificaciones de DJI Flip</a><h3>Neo 2</h3><dl><div><dt>Sensor</dt><dd>1/2 pulgada</dd></div><div><dt>Foto</dt><dd>12 MP</dd></div><div><dt>Vuelo máximo</dt><dd>19 min</dd></div></dl><a class="ui-button ui-button--quiet" href="https://store.dji.com/sg/product/dji-neo-2" target="_blank" rel="noopener">Especificaciones de DJI Neo 2</a><p>Datos del fabricante. La autonomía máxima se mide en condiciones de prueba; el tiempo real depende del vuelo.</p><p>Los vuelos del archivo aún no están asignados a un dron.</p>';
   if (captureFormats.length) { const formats=document.createElement('p'); formats.textContent=`Resoluciones del archivo: ${captureFormats.join(' · ')}`; content.append(formats); }
@@ -644,8 +497,6 @@ async function loadLibrary() {
   try {
     const r=await fetch(`${DATA}/manifest/flights.json`); if(!r.ok) throw new Error('flights'); const data=await r.json(); const flights=(data.flights || []).filter(f=>!f.archived);
     captureFormats = [...new Set(flights.map(f=>f.resolution).filter(Boolean))];
-    const cover=[...flights].sort((a,b)=>`${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)).find(f=>f.frame_count && f.has_srt);
-    if (cover) { const figure=document.getElementById('dr-footage'); figure.innerHTML=`<img src="${DATA}/frames/${encodeURIComponent(cover.clip_id)}/f_${String(Math.max(1,Math.ceil(cover.frame_count/2))).padStart(4,'0')}.jpg" alt="Vista aérea de tu archivo"><figcaption>Último vuelo · ${fmt.date(cover.date)}</figcaption>`; figure.hidden=false; }
     const seconds=flights.reduce((n,f)=>n+(Number(f.duration_s)||0),0), gps=flights.filter(f=>Array.isArray(f.stats?.home) && f.stats.home.every(Number.isFinite)).length;
     el.innerHTML=`<dl><div><dt>Vuelos en el archivo</dt><dd class="ui-figure">${fmt.number(flights.length)}</dd></div><div><dt>Video en el archivo</dt><dd>${fmt.duration(seconds).replace(/(\d[\d.,]*)/g,'<span class="ui-figure">$1</span>').replace(/ (h|min|s)/g,' <span class="ui-unit">$1</span>')}</dd></div><div><dt>Ubicados en Viajes</dt><dd class="ui-figure">${fmt.number(gps)}</dd></div></dl>`;
   } catch { el.innerHTML='<p>No se pudo cargar el archivo.</p><button class="ui-button ui-button--secondary" id="dr-retry-library">Reintentar</button>'; el.querySelector('button').onclick=loadLibrary; }

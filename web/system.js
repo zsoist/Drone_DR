@@ -1,15 +1,16 @@
-import { fmt } from './ui/format.js?v=423';
-import { term } from './ui/terms.js?v=423';
-import { jobState, jobRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=423';
-import { createSheet } from './ui/sheet.js?v=423';
-import { showToast } from './ui/toast.js?v=423';
-import { registerPaletteSource } from './ui/palette.js?v=423';
+import { fmt } from './ui/format.js?v=428';
+import { term } from './ui/terms.js?v=428';
+import { jobState, jobRelativeTime, jobEmptyState, groupFailedJobs, jobFailureReason } from './system.logic.js?v=428';
+import { createSheet } from './ui/sheet.js?v=428';
+import { showToast } from './ui/toast.js?v=428';
+import { registerPaletteSource } from './ui/palette.js?v=428';
 
 const main = renderShell('system.html');
 main.classList.add('ab-page', 'sy-page');
 const kinds = { '3d': 'Modelo 3D', splat: term('splat'), foto4k: 'Foto', edit: 'Edición', upload: 'Subida', analyze: 'Análisis', ingest: 'Importación' };
 const active = j => jobState(j)[1] === 'active';
 const failed = j => jobState(j)[1] === 'error';
+const retryHref = job => ['3d','splat'].includes(job.kind) ? 'tresd.html' : job.kind === 'ingest' ? 'drone.html' : job.kind === 'upload' ? 'subir.html' : 'studio.html';
 const skeleton = '<div class="sy-loading" aria-hidden="true"><div class="ui-skeleton ui-skeleton--text"></div><div class="ui-skeleton ui-skeleton--text"></div></div>';
 let jobs = [], filter = 'active', loaded = false, busy = false;
 main.innerHTML = `
@@ -58,7 +59,7 @@ function paintJobs() {
       <h3>${esc(j.title || j.label || 'Sin título')}</h3>
       ${active(j) ? `<div class="sy-progress"><progress max="100" value="${progress}" aria-label="Progreso"></progress><span class="ui-figures">${progress}%</span></div>` : ''}
       <p>${esc(j.status === 'queued' ? 'Esperando su turno.' : active(j) ? 'Procesando tus archivos.' : failed(j) ? `${attempts.length > 1 ? 'Último intento: ' : ''}${jobFailureReason(j)}` : label)}</p>
-      <div class="sy-job-foot"><span class="sy-note">${esc(jobRelativeTime(j, Date.now()))}</span><button class="ui-button ui-button--secondary" data-job="${esc(j.id)}" ${attempts.length > 1 ? 'data-attempts' : ''}>${attempts.length > 1 ? 'Ver intentos' : 'Ver detalles'}</button></div></article>`;
+      <div class="sy-job-foot"><span class="sy-note">${esc(jobRelativeTime(j, Date.now()))}</span>${failed(j) ? `<a class="ui-button ui-button--secondary" href="${retryHref(j)}">Preparar reintento</a>` : ''}<button class="ui-button ui-button--secondary" data-job="${esc(j.id)}" ${attempts.length > 1 ? 'data-attempts' : ''}>${attempts.length > 1 ? 'Ver intentos' : 'Ver detalles'}</button></div></article>`;
   }).join('') : `<div class="ui-empty"><h3>${empty.title}</h3>${empty.action ? `<button class="ui-button ui-button--secondary" data-review-errors>${empty.action}</button>` : `<small>${esc(empty.note)}</small>`}</div>`;
   if ($('sy-jobs').dataset.html !== html) { $('sy-jobs').innerHTML = html; $('sy-jobs').dataset.html = html; }
   $('sy-more').hidden = rows.length <= shown;
@@ -83,9 +84,8 @@ async function loadJobs() {
 }
 async function openJob(job, opener) {
   const [label] = jobState(job);
-  const retryHref = ['3d','splat'].includes(job.kind) ? 'tresd.html' : job.kind === 'ingest' ? 'drone.html' : 'studio.html';
   const view = sheet(job.title || job.label || 'Trabajo', `<p class="ui-chip">${label}</p><p>${esc(job.detail || 'Sin detalles adicionales.')}</p>
-    ${failed(job) || job.status === 'cancelled' ? `<a class="ui-button ui-button--primary" href="${retryHref}">Preparar reintento</a><p class="sy-note">Revisa los archivos y los ajustes antes de iniciar otro trabajo.</p>` : ''}
+    ${failed(job) || job.status === 'cancelled' ? `<a class="ui-button ui-button--primary" href="${retryHref(job)}">Preparar reintento</a><p class="sy-note">Revisa los archivos y los ajustes antes de iniciar otro trabajo.</p>` : ''}
     ${active(job) && !job.cancel_requested && !['cancel_requested','cancelling'].includes(job.status) ? '<button class="ui-button ui-button--danger" id="sy-cancel">Solicitar cancelación</button>' : ''}
     <dl class="sy-storage">${[['Calidad solicitada',job.requested_preset],['Procesamiento',job.effective_backend || job.requested_backend],['Archivos de origen',job.source_count || job.photo_count]].filter(([,value])=>value).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>
     <h3>Registro</h3><pre class="sy-log" role="status">Cargando registro…</pre>`, opener);

@@ -36,3 +36,8 @@ test('idle jobs use the latest completion, without changing job order', () => {
  assert.equal(jobEmptyState([], 'all', 1040000).title, 'Sin trabajos registrados');
  assert.equal(jobEmptyState([], 'active', 1040000).action, '');
 });
+
+test('month ages cannot be mistaken for minutes',()=>{
+ const now=Date.UTC(2026,9,13), finished=Date.UTC(2026,7,13)/1000;
+ assert.equal(jobRelativeTime({status:'done',finished},now),'hace 2 meses');
+});
