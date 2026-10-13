@@ -21,8 +21,7 @@ try:
     from .insights import public_record
 except ImportError:
     from insights import public_record
-SEG_LEN = 5          # segundos por highlight
-MAX_SEGS = 10        # reel máximo ≈ 50s
+MAX_SEGS = 10        # At most 120 seconds, from measured highlight spans.
 
 
 def collect(date_filter: str | None) -> list[dict]:
@@ -38,7 +37,7 @@ def collect(date_filter: str | None) -> list[dict]:
         for h in a.get("highlights", []):
             moments.append({
                 "clip": proxy, "t": h["start"],
-                "duration_s": min(SEG_LEN, h["end"] - h["start"]),
+                "duration_s": h["end"] - h["start"],
                 "score": h["score"], "reason": h["reason"],
             })
     moments.sort(key=lambda m: -m["score"])

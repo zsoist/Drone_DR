@@ -83,6 +83,106 @@ class VisualAI(unittest.TestCase):
         self.assertTrue(data['synthetic'])
         self.assertEqual([], data['insight']['highlight_segments'])
 
+    def peak_fixture(self, reasons):
+        from PIL import Image
+        data = copy.deepcopy(self.data)
+        data['duration_s'] = 80
+        data['sampled_frame_times'] = [0, 10, 30, 50, 70]
+        data['insight']['best_frame_times'] = [10, 30, 50, 70]
+        data['insight']['subjects'] = ['río', 'fachada de ladrillo']
+        data['insight']['highlight_segments'] = [
+            {'start': t - 4, 'end': t + 6, 'score': .9, 'reason': reason}
+            for t, reason in zip((10, 30, 50, 70), reasons)]
+        # One isolated jump, one broad peak, then another isolated jump.
+        levels = {10: 210, 28: 180, 30: 120, 32: 90, 50: 210, 70: 100}
+        level = 100
+        for t in range(0, 80, 2):
+            level = levels.get(t, level)
+            Image.new('RGB', (16, 16), (level,) * 3).save(
+                self.vault / 'frames/clip_a' / f'f_{t // 2 + 1:04d}.jpg')
+        self.write('ai/clip_a.json', data)
+        return data
+
+    def test_peak_labels_use_only_matching_temporal_evidence(self):
+        self.peak_fixture(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul',
+                           'Cambio de escena en el recorrido.', 'Giro junto al río azul'])
+        result = insights.public_record('clip_a', self.vault)
+        labels = [h.get('label') for h in result['highlights']]
+        self.assertEqual(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul', None, None], labels)
+        self.assertTrue(all(len(label) <= 40 for label in labels if label))
+
+    def test_peak_width_controls_duration(self):
+        self.peak_fixture(['Paso sobre el río azul'] * 4)
+        spans = insights.public_record('clip_a', self.vault)['highlights']
+        self.assertEqual([3, 6, 3, 3], [round(h['end'] - h['start'], 3) for h in spans])
+        for h in spans:
+            self.assertLessEqual(h['start'], h['evidence']['peak_time_s'])
+            self.assertGreater(h['end'], h['evidence']['peak_time_s'])
+
+    def test_caption_fields_do_not_use_highlight_labels(self):
+        data = self.peak_fixture(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul'])
+        before = (self.vault / 'ai/clip_a.json').read_bytes()
+        self.vision_mock.reset_mock(); self.embed_mock.reset_mock()
+        public = insights.public_record('clip_a', self.vault)
+        summary = insights.get_summary('flight', 'clip_a', self.vault)
+        detail = insights.get_insight('clip_a', self.vault)
+        tid = insights.trip_groups(self.rows)[0]['id']
+        recap = insights.get_summary('trip', tid, self.vault)
+        for item in [public, summary['cover'], summary['best_moment'], *recap['best_frames'], *detail['frames']]:
+            self.assertEqual('Río azul entre montañas.', item.get('caption'))
+            self.assertEqual('Río azul entre montañas', item.get('caption_short'))
+        frame = insights.moment('clip_a', data, vault=self.vault)
+        self.assertEqual('Río azul entre montañas', frame['label'])
+        self.assertEqual(before, (self.vault / 'ai/clip_a.json').read_bytes())
+        self.vision_mock.assert_not_called(); self.embed_mock.assert_not_called()
+
+    def test_peak_label_omits_static_generic_or_out_of_time_text(self):
+        data = self.peak_fixture(['Fachada de ladrillo junto al río', 'Vuelo sobre el paisaje',
+                                  'Paso sobre la fachada de ladrillo junto al parque', 'Giro junto al río azul'])
+        # A reason after the peak cannot label an earlier frame.
+        data['insight']['highlight_segments'][-1]['start'] = 71
+        self.write('ai/clip_a.json', data)
+        labels = [h.get('label') for h in insights.public_record('clip_a', self.vault)['highlights']]
+        self.assertEqual([None, None, 'Paso sobre la fachada de ladrillo', None], labels)
+
+    def test_trimming_does_not_leave_an_action_without_its_subject(self):
+        self.peak_fixture(['Movimiento de transición que revela nuevos edificios y zonas verdes.'])
+        self.assertTrue(all('label' not in h for h in insights.public_record('clip_a', self.vault)['highlights']))
+
+    def test_wide_peak_and_clip_edges_bound_duration(self):
+        from PIL import Image
+        data = self.peak_fixture(['Paso sobre la fachada de ladrillo'] * 4)
+        data['insight']['best_frame_times'] = [0, 10, 30, 50, 70]
+        data['insight']['highlight_segments'] = [
+            {'start': 0, 'end': 80, 'score': .9, 'reason': 'Paso sobre la fachada de ladrillo'}]
+        # A 16-second pulse, with a taller center, exceeds the 12-second limit.
+        levels = {2: 160, 22: 120, 24: 160, 26: 120, 28: 160,
+                  30: 90, 32: 130, 34: 90, 36: 130, 78: 210}
+        level = 100
+        for t in range(0, 80, 2):
+            level = levels.get(t, level)
+            Image.new('RGB', (16, 16), (level,) * 3).save(
+                self.vault / 'frames/clip_a' / f'f_{t // 2 + 1:04d}.jpg')
+        self.write('ai/clip_a.json', data)
+        spans = insights.public_record('clip_a', self.vault)['highlights']
+        self.assertEqual([3, 12, 3], [s['end'] - s['start'] for s in spans])
+        for s in spans:
+            self.assertTrue(0 <= s['start'] <= s['evidence']['peak_time_s'] < s['end'] <= 80)
+        data['duration_s'] = 2.9
+        self.assertEqual([], insights.highlight_peaks.derive(data, self.vault)['segments'])
+
+    def test_reel_keeps_the_full_measured_peak_span(self):
+        import reel
+        data = self.peak_fixture(['Paso sobre la fachada de ladrillo', 'Giro junto al río azul'])
+        data['clip_id'] = 'DJI_a'
+        self.write('ai/DJI_a.json', data)
+        (self.vault / 'frames/clip_a').rename(self.vault / 'frames/DJI_a')
+        (self.vault / 'proxies').mkdir()
+        (self.vault / 'proxies/DJI_a.mp4').write_bytes(b'proxy')
+        with patch.object(reel, 'VAULT', self.vault):
+            spans = reel.collect(None)
+        self.assertEqual([3, 3, 3, 6], sorted(s['duration_s'] for s in spans))
+
     def test_property_copy_has_no_observation_stutter(self):
         import property_copy
         text = property_copy.template({}, [{'caption': 'Valle montañoso con casas y una calle.', 'tags': []}])
@@ -146,7 +246,7 @@ class VisualAI(unittest.TestCase):
         moved = insights.public_record('clip_a', self.vault)['highlights']
         self.assertEqual(1, len(moved))
         self.assertEqual(46, moved[0]['evidence']['peak_time_s'])
-        self.assertEqual(43, moved[0]['start'])
+        self.assertEqual((43.5, 46.5), (moved[0]['start'], moved[0]['end']))
 
     def test_json_projection_covers_nested_cards_and_never_trusts_cached_quality(self):
         from ai.frame_api import project
@@ -261,13 +361,14 @@ class VisualAI(unittest.TestCase):
             Image.new('RGB', (16, 16), (220,) * 3).save(
                 self.vault / 'frames/clip_a' / f'f_{i:04d}.jpg')
         data = copy.deepcopy(self.data)
+        data['insight']['highlight_segments'][0]['reason'] = 'Paso sobre el río azul'
         data['insight']['highlight_segments'].append(
             {'start': 4, 'end': 6, 'score': .7, 'reason': 'Montañas al fondo.'})
         self.write('ai/clip_a.json', data)
         result = insights.get_summary('flight', 'clip_a', self.vault)
         self.assertEqual(1, len(result['highlights']))
         self.assertEqual(2, result['highlights'][0]['evidence']['peak_time_s'])
-        self.assertEqual((0, 6), tuple(result['highlights'][0][k] for k in ('start', 'end')))
+        self.assertEqual((0, 3), tuple(result['highlights'][0][k] for k in ('start', 'end')))
         self.assertTrue(result['best_moment']['label'])
 
     def test_property_copy_uses_visual_facts_without_access_claims(self):
@@ -437,7 +538,7 @@ class VisualAI(unittest.TestCase):
         with patch.object(reel, 'VAULT', self.vault):
             moments = reel.collect(None)
         self.assertEqual(1, len(moments))
-        self.assertEqual((0, 5), (moments[0]['t'], moments[0]['duration_s']))
+        self.assertEqual((0, 3), (moments[0]['t'], moments[0]['duration_s']))
         self.assertGreater(moments[0]['score'], .8)
 
     def test_property_copy_rejects_praise_and_excludes_old_copy_from_prompt(self):
