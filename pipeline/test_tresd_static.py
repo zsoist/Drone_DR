@@ -56,6 +56,15 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
             self.assertIn("--use-3dmesh", args)
             self.assertNotIn("--skip-3dmodel", args)
 
+    def test_early_viewer_tab_tap_is_not_lost(self):
+        # 2026-10-13: the tabs render ~0.5 s before tresd.js wires them; an early tap was dropped
+        tresd = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
+        early = tresd.index("document.addEventListener('click', rememberViewerTab)")
+        wired = tresd.index("document.getElementById('scene-viewer-tabs').addEventListener('click'")
+        self.assertLess(early, tresd.index("await getFlights()"))
+        self.assertLess(early, wired)
+        self.assertIn("document.removeEventListener('click', rememberViewerTab)", tresd[wired:])
+
     def test_splat_controls_exist_before_first_combined_render(self):
         source = (Path(__file__).resolve().parent.parent / "web" / "tresd.js").read_text()
         self.assertLess(source.index("const splatChk"), source.index("renderCombined();"))

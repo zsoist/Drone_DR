@@ -1,17 +1,17 @@
-import { skinPlayer } from './ui/player.js?v=431';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=431';
-import { fmt } from './ui/format.js?v=431';
-import { term } from './ui/terms.js?v=431';
-import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=431';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=431';
-  import * as THREE from '/vendor/three180.module.js?v=431';
-  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=431';
-  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=431';
-  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=431';
-  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=431';
-  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=431';
-  import { mountSplatViewer } from '/splatview.js?v=431';
-  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=431';
+import { skinPlayer } from './ui/player.js?v=432';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=432';
+import { fmt } from './ui/format.js?v=432';
+import { term } from './ui/terms.js?v=432';
+import { sceneInsight, sceneCover, hydrateSceneCovers, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=432';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=432';
+  import * as THREE from '/vendor/three180.module.js?v=432';
+  import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=432';
+  import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=432';
+  import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=432';
+  import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=432';
+  import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=432';
+  import { mountSplatViewer } from '/splatview.js?v=432';
+  import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=432';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
   const SPLAT_RANK = { sog: 0, spz: 1, ksplat: 2, splat: 3, ply: 4 };
@@ -971,6 +971,14 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=431';
     s.loss != null ? `Error: loss ${s.loss}` : '',
   ].filter(Boolean).join(' · ') : '';
   let sysErr = false;   // distinguir "no hay proyectos" de "no se pudo CARGAR el índice"
+  // The viewer tabs render before the code below wires them (index fetches take ~0.5 s).
+  // Remember a tab tap in that window and apply it when the viewer is ready.
+  let pendingViewerMode = null;
+  const rememberViewerTab = event => {
+    const tab = event.target.closest?.('#scene-viewer-tabs [data-viewer-mode]');
+    if (tab && !tab.disabled) pendingViewerMode = tab.dataset.viewerMode;
+  };
+  document.addEventListener('click', rememberViewerTab);
   try { const response=await fetch('data/manifest/system.json');if(!response.ok)throw new Error('Scene index unavailable');sys=await response.json(); } catch { sysErr = true; }
   models = sys.models || [];
   registerScenes(models);
@@ -2980,6 +2988,11 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=431';
     if (!tab || tab.disabled || tab.dataset.viewerMode === viewerMode) return;
     activateViewerMode(tab.dataset.viewerMode, { autoload: true });
   });
+  document.removeEventListener('click', rememberViewerTab);
+  if (pendingViewerMode && pendingViewerMode !== viewerMode) {
+    if (cur) activateViewerMode(pendingViewerMode, { autoload: true });
+    else { viewerMode = pendingViewerMode; localStorage.setItem('ab.3d.viewerMode', viewerMode); }
+  }
   document.getElementById('viewer-load').addEventListener('click', loadActiveViewer);
   // «Recargar …» es acción secundaria: ghost. «Cargar/Reintentar/Cargando…» siguen siendo la primaria del panel.
   { const lb = document.getElementById('viewer-load');

@@ -1,5 +1,5 @@
-import { Suggested } from './ui/suggested.js?v=431';
-import { approvedFrame } from './p.logic.js?v=431';
+import { Suggested } from './ui/suggested.js?v=432';
+import { approvedFrame } from './p.logic.js?v=432';
 const main = renderShell('guia.html');
 main.classList.add('ab-page', 'gd-page');
 const guides = [

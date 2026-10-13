@@ -1,16 +1,16 @@
-import { fmt } from './ui/format.js?v=431';
-import { term } from './ui/terms.js?v=431';
-import { Suggested } from './ui/suggested.js?v=431';
-import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=431';
-import { loadIsCurrent } from './scene-improve-state.js?v=431';
+import { fmt } from './ui/format.js?v=432';
+import { term } from './ui/terms.js?v=432';
+import { Suggested } from './ui/suggested.js?v=432';
+import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=432';
+import { loadIsCurrent } from './scene-improve-state.js?v=432';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
-import * as THREE from '/vendor/three180.module.js?v=431';
-import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=431';
-import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=431';
-import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=431';
-import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=431';
-import { mountSplatViewer } from '/splatview.js?v=431';
+import * as THREE from '/vendor/three180.module.js?v=432';
+import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=432';
+import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=432';
+import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=432';
+import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=432';
+import { mountSplatViewer } from '/splatview.js?v=432';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

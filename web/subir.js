@@ -3,9 +3,9 @@
 // Dron still loads this file for its legacy capture panel. That page owns its uploader.
 (async () => {
 if (location.pathname.endsWith('/subir.html')) {
-  const { showToast } = await import('./ui/toast.js?v=431');
-  const { registerPaletteSource } = await import('./ui/palette.js?v=431');
-  const { fmt } = await import('./ui/format.js?v=431');
+  const { showToast } = await import('./ui/toast.js?v=432');
+  const { registerPaletteSource } = await import('./ui/palette.js?v=432');
+  const { fmt } = await import('./ui/format.js?v=432');
   await shell.ready;
   const main = renderShell('studio.html');
   main.classList.add('sb-page', 'ab-page');
@@ -168,7 +168,7 @@ if (!location.pathname.endsWith('/subir.html')) (function () {
   }
 
   async function openFull() {
-    const { createSheet } = await import('./ui/sheet.js?v=431');
+    const { createSheet } = await import('./ui/sheet.js?v=432');
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal sb-modal">
