@@ -129,3 +129,9 @@
  .lab-lazy { padding:var(--sp-4); }
  .lab-lazy > b { font-size:var(--fs-xl); }
 }
+.lab-lazy { background-position:center; background-size:cover; color:var(--on-media); }
+.lab-lazy p { color:var(--on-media-2); }
+.lab-main .lab-lazy #lab-load-ed { min-height:44px; height:auto; width:auto; padding:var(--sp-3) var(--sp-5); border:0; border-radius:var(--r-sm); background:var(--on-media); color:#000; }
+.lab-main .lab-lazy .sl-empty-stats { display:none; }
+.lab-main button { min-height:44px; }
+.lab-frame-wrap.is-empty .lab-gestures { display:none; }

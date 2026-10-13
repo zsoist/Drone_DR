@@ -1,7 +1,7 @@
 /* Scene improve — page overrides on top of style.css (Instrument Graphite). Tokens only. */
 
 /* the shared --page-max cap rules; no local max-width */
-.scene-improve-page .main { max-width: calc(var(--page-max) + 2 * var(--main-px)); }
+
 
 .si-back { display: inline-flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-3); color: var(--text-2); font-size: var(--fs-md); }
 .si-back svg.ic { width: var(--ic-md); height: var(--ic-md); }
@@ -105,3 +105,6 @@ html[data-theme="light"] .si-capture > input[type=checkbox]:checked {
  .si-review .si-role-summary { flex-wrap:wrap; }
  .si-review .si-submit { width:100%; }
 }
+.si-role,.si-budget,.si-truth,.si-review-kpis span { font-family:var(--font); }
+.si-capture > input[type=checkbox],.si-settings input[type=checkbox] { width:44px; height:44px; background-size:18px; }
+@media(min-width:821px) { .si-capture { grid-template-columns:44px 104px minmax(0,1fr); } }

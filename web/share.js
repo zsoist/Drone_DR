@@ -1,5 +1,8 @@
-import { sceneTitle, sceneVersionLabel, areaNav, contentSheet, sceneInfo, reducedMotion } from './scene-improve-ui.js?v=402';
-import { loadIsCurrent } from './scene-improve-state.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { term } from './ui/terms.js?v=402';
+import { mountTabs } from './ui/tabs.js?v=402';
+import { sceneTitle, sceneVersionLabel, contentSheet, sceneInfo, sceneInsight, suggestionBlock, reducedMotion } from './scene-improve-ui.js?v=414';
+import { loadIsCurrent } from './scene-improve-state.js?v=414';
 // AeroBrain — visor privado de un modelo 3D (el servidor exige sesión).
 // /share.html?m=<clip_id> — nube · malla · splat + comparador foto/elevación.
 import * as THREE from '/vendor/three180.module.js?v=402';
@@ -7,7 +10,7 @@ import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js
 import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=402';
 import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=402';
 import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=402';
-import { mountSplatViewer } from '/splatview.js?v=402';
+import { mountSplatViewer } from '/splatview.js?v=414';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,11 +19,11 @@ const cid = (new URLSearchParams(location.search).get('m') || '').replace(/[^\w-
 document.body.classList.add('share-page');
 document.body.innerHTML = `<div class="share-main">
   <header class="sh-head rise">
-    <a class="ui-button ui-button--quiet" href="tresd.html" aria-label="Volver a Escenas">${icon('chevL')}</a>
+    ${shell.backLink('Escenas', '/tresd.html')}
     <div class="sh-head-t">
       <h1 id="sh-title">Modelo 3D</h1>
-      <span class="sh-sub">Visor 3D · enlace privado</span>
-    </div>
+
+    </div><button class="ui-button ui-button--quiet" id="sh-options">Detalles</button>
   </header>
   <div id="sh-body" aria-busy="true"><div class="ui-skeleton ui-skeleton--media" aria-hidden="true"></div></div>
 </div>
@@ -87,7 +90,7 @@ const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(2) + ' ha' : Math.ro
 
 const dlRow = (href, name, sub, opts = '') =>
   `<a class="exp sh-dl" href="${href}" ${opts}>${icon('dl')}<div><b>${name}</b><span class="sh-dl-sub" data-size-url="${href}">${sub}</span></div></a>`;
-const sizeOf = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
+const sizeOf = b => b >= 1e9 ? `${fmt.number(b / 1e9, 1)} GB` : `${fmt.number(Math.max(1, Math.round(b / 1e6)))} MB`;
 
 body.setAttribute('aria-busy','false');
 body.innerHTML = `
@@ -101,18 +104,19 @@ body.innerHTML = `
 
   <div class="panel rise sh-viewer">
     <div class="ph sh-ph">
-      <span class="sh-ph-t">Visor 3D</span>
+
       <a id="sh-volar" class="ui-button ui-button--quiet sh-volar" href="volar.html?m=${encodeURIComponent(cid)}" hidden>${icon('drone')} Volar en 3D</a>
-      <div class="seg sh-tabs" role="tablist" aria-label="Tipo de visor">
-        <button class="on" data-v="cloud" role="tab" aria-selected="true">Nube</button>
-        ${meshOk ? '<button data-v="mesh" role="tab" aria-selected="false">Malla</button>' : ''}
-        ${splat ? '<button data-v="splat" role="tab" aria-selected="false">Splat</button>' : ''}
+      <div class="ui-tabs sh-tabs" role="tablist" aria-label="Tipo de visor">
+        <button class="on" data-v="cloud" role="tab" aria-selected="true">${term('cloud')}</button>
+        ${meshOk ? `<button data-v="mesh" role="tab" aria-selected="false">${term('mesh')}</button>` : ''}
+        ${splat ? `<button data-v="splat" role="tab" aria-selected="false">${term('splat')}</button>` : ''}
       </div>
     </div>
     <div id="sh-view" class="sh-view"><img class="scene-poster" src="${base}/${esc(meta.ortho_asset || 'ortho.jpg')}" alt="Vista previa de ${esc(sceneTitle(meta.title || 'la escena'))}" data-transition-key="world-${esc(cid)}"><button class="ui-button ui-button--primary sh-start" id="sh-start">Cargar escena</button></div>
   </div>
 
-  <div class="sh-actions"><button class="ui-button ui-button--secondary" id="sh-info">Información</button><button class="ui-button ui-button--quiet" id="sh-downloads">Descargas</button>${meta.cmp_asset && meta.has_dsm ? '<button class="ui-button ui-button--quiet" id="sh-compare">Comparar elevación</button>' : ''}</div>
+  <div class="sh-description" id="sh-description" aria-busy="true"><span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span></div>
+  <div class="sh-actions" hidden><button class="ui-button ui-button--secondary" id="sh-info">Información</button><button class="ui-button ui-button--quiet" id="sh-downloads">Descargas</button>${meta.cmp_asset && meta.has_dsm ? '<button class="ui-button ui-button--quiet" id="sh-compare">Foto y relieve</button>' : ''}</div>
   <div id="sh-details" hidden>
   ${meta.cmp_asset && meta.has_dsm ? `
   <div class="panel rise">
@@ -128,12 +132,12 @@ body.innerHTML = `
     <div class="ph">Descargas</div>
     <div class="pb"><div class="sh-dl-grid">
       ${dlRow(`${base}/ortho_full.jpg`, 'Ortofoto 5K', 'JPG', 'target="_blank" rel="noopener"')}
-      ${dlRow(`${base}/cloud.ply`, 'Nube de puntos', 'PLY', 'download')}
-      ${meta.cloud_copc_asset ? dlRow(`${base}/${meta.cloud_copc_asset}`, 'Nube optimizada', 'COPC', 'download') : ''}
-      ${meshOk ? dlRow(`${base}/model/odm_textured_model_geo.obj`, 'Malla 3D', 'OBJ', 'download') : ''}
-      ${splat ? dlRow(splatUrl(splat), 'Splat', `${splatFmt}${splat.bytes ? ' · ' + sizeOf(splat.bytes) : ''}`, 'download') : ''}
+      ${dlRow(`${base}/cloud.ply`, term('cloud'), 'PLY', 'download')}
+      ${meta.cloud_copc_asset ? dlRow(`${base}/${meta.cloud_copc_asset}`, 'Puntos para descargar', 'COPC', 'download') : ''}
+      ${meshOk ? dlRow(`${base}/model/odm_textured_model_geo.obj`, term('mesh'), 'OBJ', 'download') : ''}
+      ${splat ? dlRow(splatUrl(splat), term('splat'), `${splatFmt}${splat.bytes ? ' · ' + sizeOf(splat.bytes) : ''}`, 'download') : ''}
     </div>
-    <p class="page-foot sh-foot">Procesado localmente con AeroBrain — fotogrametría ODM sobre video de dron DJI.</p></div>
+    </div>
   </div></div>`;
 
 const detailNodes = [...document.querySelectorAll('#sh-details > .panel')];
@@ -161,12 +165,12 @@ fetch(`data/models/${cid}/scene.v2.json`).then(r => r.ok ? r.json() : null)
   .catch(() => {});
 
 if (splat && splats.length > 1) {
-  const seg = document.querySelector('.sh-ph');
+  const seg = document.querySelector('.sh-actions');
   const sel = document.createElement('select');
   sel.className = 'share-splat-select';
   sel.classList.add('ctl');
-  sel.title = 'Versión del splat';
-  sel.setAttribute('aria-label', 'Versión del splat');
+  sel.title = 'Versión de la escena';
+  sel.setAttribute('aria-label', 'Versión de la escena');
   sel.innerHTML = splats.map(s => {
     const label = splatVersionLabel(s);
     return `<option value="${esc(splatKey(s))}"${splatKey(s) === splatKey(splat) ? ' selected' : ''}>${esc(label)}</option>`;
@@ -178,6 +182,19 @@ if (splat && splats.length > 1) {
   });
   seg?.appendChild(sel);
 }
+
+const options = document.querySelector('.sh-actions');
+options.append(document.getElementById('sh-volar'));
+document.getElementById('sh-options').onclick = e => {
+  options.hidden = false;
+  const sheet = contentSheet('Detalles de la escena', options, e.currentTarget);
+  sheet.element.addEventListener('close', () => { options.hidden = true; body.append(options); }, {once:true});
+};
+const description = document.getElementById('sh-description');
+sceneInsight({...meta, clip_id:cid}).then(insight => {
+  description.replaceChildren(...(insight ? [suggestionBlock({title:'', text:insight.caption_short, fullText:insight.caption})] : []));
+}).catch(() => { description.textContent = 'Descripción no disponible.'; })
+  .finally(() => description.setAttribute('aria-busy','false'));
 
 // ---------- comparador ----------
 const cmp = document.getElementById('cmp');
@@ -325,9 +342,9 @@ function fitSplatViewer(viewer) {
 const loaders = {
   async cloud() {
     const myLoad = view._loadToken;                            // currency (#1)
-    const st = spinner('Descargando nube de puntos…');
+    const st = spinner('Cargando puntos…');
     const geo = await new PLYLoader().loadAsync(`${base}/cloud.ply`,
-      ev => { st.textContent = ev.total ? `Nube · ${Math.round(ev.loaded / ev.total * 100)}%` : `Nube · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+      ev => { st.textContent = ev.total ? `Puntos · ${Math.round(ev.loaded / ev.total * 100)}%` : `Puntos · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     if (view._loadToken !== myLoad) { geo.dispose(); return; }
     const { scene, cam, controls } = makeScene();
     const mat = new THREE.PointsMaterial({ size: 0.18, sizeAttenuation: true, vertexColors: geo.hasAttribute('color') });
@@ -338,7 +355,7 @@ const loaders = {
   },
   async mesh() {
     const myLoad = view._loadToken;                            // currency (#1)
-    const st = spinner('Descargando malla texturizada…');
+    const st = spinner('Cargando modelo 3D…');
     const mbase = `${base}/model/`;
     // switch de calidad 4-tier con supersampling por tier (Metal). extra/ultra desktop-only
     // (Safari/iPhone evictan >~1GB → parches negros). ultra = geo.mtl 4096 original.
@@ -370,7 +387,7 @@ const loaders = {
     const mc0 = await tierMaterials(curTier, true);
     const meshFile = (meta.model_viewer || 'model/odm_textured_model_geo.obj').split('/').pop();
     const obj = await new OBJLoader().setMaterials(mc0).setPath(mbase).loadAsync(meshFile,
-      ev => { if (ev.loaded) st.textContent = `Malla · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
+      ev => { if (ev.loaded) st.textContent = `Modelo 3D · ${(ev.loaded / 1e6).toFixed(0)} MB`; });
     if (view._loadToken !== myLoad) return;                    // tab cambió durante la descarga
     const { scene, cam, controls, renderer } = makeScene();
     renderer.setPixelRatio(prFor(curTier));
@@ -405,28 +422,27 @@ const loaders = {
     obj.rotation.x = -Math.PI / 2;
     scene.add(obj);
     frame(obj, cam, controls);
-    // HUD de calidad (share.html no tiene foto/relieve; solo el switch de resolución)
     const tierBtns = Object.entries(TIERS)
       .filter(([, t]) => !t.hires || HIRES_OK)
-      .map(([k, t]) => `<button class="chip${k === curTier ? ' on' : ''}" data-mq="${k}">${t.label}</button>`).join('');
+      .map(([k, t]) => `<button aria-pressed="${k === curTier}" data-mq="${k}">${t.label}</button>`).join('');
     const hud = document.createElement('div');
-    hud.className = 'viewer-hud';
-    hud.innerHTML = `<label>Calidad ${tierBtns}</label>`;
-    view.appendChild(hud);
+    hud.className = 'sh-quality';
+    hud.innerHTML = `<p>Calidad del modelo</p><div class="ui-segmented" role="group" aria-label="Calidad del modelo">${tierBtns}</div>`;
+    options.append(hud);
     hud.addEventListener('click', async ev => {
       const mq = ev.target.closest('[data-mq]');
-      if (!mq || mq.classList.contains('on')) return;
+      if (!mq || mq.getAttribute('aria-pressed') === 'true') return;
       const btns = [...hud.querySelectorAll('[data-mq]')];
       btns.forEach(b => b.disabled = true);
       const t = mq.textContent; mq.textContent = '…';
       const ok = await switchTier(mq.dataset.mq);
       mq.textContent = t; btns.forEach(b => b.disabled = false);
-      if (ok) btns.forEach(c => c.classList.toggle('on', c === mq));
+      if (ok) btns.forEach(c => c.setAttribute('aria-pressed', String(c === mq)));
     });
   },
   async splat() {
     const myLoad = view._loadToken;
-    const st = spinner('Descargando splat…');
+    const st = spinner('Cargando escena…');
     const ac = view._loadAbort = new AbortController();   // cambiar de tab aborta el mount en vuelo
     let handle;
     try {
@@ -445,21 +461,27 @@ const loaders = {
   },
 };
 
-document.querySelector('.sh-tabs').addEventListener('click', e => {
-  const b = e.target.closest('[data-v]');
+function loadView(b, confirmed = false) {
   if (!b) return;
+  options.querySelector('.sh-quality')?.remove();
   view._loadToken = (view._loadToken || 0) + 1;   // invalida carga mesh/cloud/splat en vuelo (#1)
   try { view._loadAbort?.abort(); } catch {} view._loadAbort = null;
   // el módulo premium expone su propio dispose (limpia HUD + listeners + viewer)
   if (view._splatDispose) { const d = view._splatDispose; view._splatDispose = null; view._splatViewer = null; try { d(); } catch {} }
   else if (view._splatViewer) { const v = view._splatViewer; view._splatViewer = null; try { const p = v.dispose(); if (p?.catch) p.catch(() => {}); } catch {} }
   document.querySelectorAll('.sh-tabs button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
-  const NAMES = { cloud: 'la nube de puntos (cloud.ply)', mesh: 'la malla texturizada (OBJ/MTL)', splat: `el splat (.${splatFmt.toLowerCase()})` };
+  const bytes = b.dataset.v === 'splat' ? splat?.bytes : b.dataset.v === 'cloud' ? meta.cloud_bytes : meta.mesh_bytes;
+  if (!confirmed && matchMedia('(max-width:600px)').matches && bytes > 80 * 1024 * 1024) {
+    view.innerHTML = `<div class="sh-large"><p>Esta vista descarga <span class="ui-figure">${sizeOf(bytes)}</span>.</p><button class="ui-button ui-button--primary" id="sh-start">Cargar escena · ${sizeOf(bytes)}</button></div>`;
+    document.getElementById('sh-start').onclick = () => loadView(b, true);
+    return;
+  }
   const token = view._loadToken;
   loaders[b.dataset.v]().catch(err => {
     if (!loadIsCurrent(view, token)) return;
-    view.innerHTML = `<p class="footer-note">No se pudo cargar ${NAMES[b.dataset.v]} del modelo ${esc(cid)}.
-      <span class="sh-err">${esc(String(err && err.message || err).slice(0, 120))}</span></p>`;
+    view.innerHTML = '<div class="sh-err"><p>No se pudo cargar esta vista.</p><button class="ui-button ui-button--secondary" id="sh-retry">Reintentar</button></div>';
+    document.getElementById('sh-retry').onclick = () => loadView(b, true);
   });
-});
-document.getElementById('sh-start').addEventListener('click',()=>document.querySelector('.sh-tabs [data-v="cloud"]').click());
+}
+const tabs = mountTabs(document.querySelector('.sh-tabs'), {onChange:loadView});
+tabs.select(document.querySelector(`.sh-tabs [data-v="${splat ? 'splat' : 'cloud'}"]`));

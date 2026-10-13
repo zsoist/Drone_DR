@@ -1,12 +1,16 @@
-import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=402';
-import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
+import { skinPlayer } from './ui/player.js?v=402';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=402';
+import { fmt } from './ui/format.js?v=402';
+import { term } from './ui/terms.js?v=402';
+import { sceneInsight, sceneTitle, sceneVersionLabel, areaNav, createSheet, copyLink, sceneInfo, registerScenes, skeletonCards, wireOrbitPreview, reducedMotion, confirmSheet, showToast, suggestionBlock } from './scene-improve-ui.js?v=414';
+import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=414';
   import * as THREE from '/vendor/three180.module.js?v=402';
   import { OrbitControls } from '/vendor/three-addons180/controls/OrbitControls.js?v=402';
   import { OBJLoader } from '/vendor/three-addons180/loaders/OBJLoader.js?v=402';
   import { MTLLoader } from '/vendor/three-addons180/loaders/MTLLoader.js?v=402';
   import { glbUrlFromManifest, loadGlbMesh } from '/flightverse/glb-mesh.js?v=402';
   import { PLYLoader } from '/vendor/three-addons180/loaders/PLYLoader.js?v=402';
-  import { mountSplatViewer } from '/splatview.js?v=402';
+  import { mountSplatViewer } from '/splatview.js?v=414';
   import { normalizeViewerMode, shouldAutoloadViewer, viewerHeaderState } from '/unified-viewer-state.js?v=402';
 
   const SPLAT_EXT = /\.(sog|spz|ksplat|splat|ply)$/i;
@@ -85,9 +89,9 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
       const eta = splatEta(profile);
       return `<button type="button" class="mpreset splat-profile${profile.key === selected ? ' on' : ''}${onlyCuda ? ' cuda-only' : ' local-ok'}${profile.key === defaultSplatKey(profiles) ? ' featured' : ''}"
         aria-pressed="${profile.key === selected}" data-badge="${esc(profile.key === 'mcmc1m' ? '1M' : profile.iters >= 1000 ? profile.iters / 1000 + 'K' : profile.iters)}" data-splat-profile="${esc(profile.key)}" data-iters="${esc(profile.iters)}" data-cuda-only="${onlyCuda ? '1' : '0'}">
-        <span class="sp-profile-top"><b>${esc(profile.label)}</b><em>${onlyCuda ? 'NVIDIA CUDA' : 'MAC / CUDA'}</em></span>
+        <span class="sp-profile-top"><b>${esc(term(profile.key) === profile.key ? (profile.key === 'mcmc1m' ? 'Equilibrada' : 'Mayor detalle') : term(profile.key))}</b></span>
         <span class="sp-eta ${eta.cls}">${esc(eta.main)}</span>
-        <small>${esc(eta.sub)}</small><small class="sp-desc">${esc(splatCopy(profile.key) || profile.description)}</small>
+
       </button>`;
     }).join('');
   }
@@ -197,10 +201,9 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
   main.classList.add('page-3d', 'ab-page');
   main.innerHTML = `
     ${areaNav('escenas')}
-    ${pageHead('Tus escenas', 'Vuelve a los lugares que capturaste.', '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>')}
+    ${pageHead('Tus escenas', '', '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>')}
 
-    <div class="pm-tabs rise td-tabs" id="td-tabs">
-      <i class="pm-ink"></i>
+    <div id="td-tabs" hidden>
       <button class="on" data-tab="projects">Biblioteca</button>
       <button data-tab="process">Herramientas</button>
       <button data-tab="jobs">Actividad</button>
@@ -214,20 +217,20 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
           <div class="search td-search">${icon('search')}<input id="proj-q" type="search" placeholder="Buscar escena…" aria-label="Buscar proyecto" autocomplete="off"></div>
           <select class="ctl" id="proj-filter" aria-label="Filtrar proyectos" data-tip="Filtra por lo que tiene cada proyecto">
             <option value="all">Todos</option>
-            <option value="dsm">Con DSM</option>
-            <option value="splat">Con splat</option>
-            <option value="cuda">Splat NVIDIA</option>
-            <option value="exc">Calidad excelente</option>
-            <option value="weak">Malla débil</option>
+            <option value="dsm">Con elevación</option>
+            <option value="splat">Con escena fotorrealista</option>
+            <option value="cuda">Procesadas en el PC</option>
+            <option value="exc">Mayor detalle</option>
+            <option value="weak">Modelo con zonas incompletas</option>
           </select>
           <select class="ctl" id="proj-sort" aria-label="Ordenar proyectos" data-tip="Orden dentro de cada lugar">
             <option value="recent">Recientes</option>
             <option value="area">Más área</option>
-            <option value="quality">Mejor gaussian</option>
+            <option value="quality">Mayor detalle</option>
             <option value="cameras">Más cámaras</option>
             <option value="size">Más pesados</option>
           </select>
-          <div class="seg td-viewseg" aria-label="Modo de vista">
+          <div class="ui-segmented td-viewseg" aria-label="Modo de vista">
             <button class="on" data-proj-mode="cards">${icon('grid')} Tarjetas</button>
             <button data-proj-mode="list">${icon('list')} Lista</button>
           </div>
@@ -268,10 +271,10 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
         </div>
         <div class="td-actions">
           <button class="ui-button ui-button--primary td-cta" id="btn-run3d" data-open-run3d>
-            ${icon('cube')}<span><b>Procesar un vuelo…</b><small>frames + geotag + fotogrametría · combina tomas del mismo lugar</small></span>
+            ${icon('cube')}<span><b>Procesar un vuelo…</b><small>Combina tomas del mismo lugar</small></span>
             <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta" id="btn-splat" data-open-splat>
-            ${icon('splat')}<span><b>Generar splat…</b><small data-splat-cta-sub>PC NVIDIA CUDA · 1K a 40K</small></span>
+            ${icon('splat')}<span><b>Crear escena fotorrealista…</b><small data-splat-cta-sub>Elige las capturas y el detalle</small></span>
             <i class="td-cta-arrow">${icon('chevR')}</i></button>
           <button class="btn td-cta" id="btn-cuda-campaign">
             ${icon('cpu')}<span><b>Campaña CUDA…</b><small>reprocesar sitios activos · 15K/20K/30K/40K estricto</small></span>
@@ -356,7 +359,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
           <div class="td-jobkinds" aria-label="Tipo">
             <button class="chip on" data-job-kind="all">Todo tipo</button>
             <button class="chip" data-job-kind="3d">ODM</button>
-            <button class="chip" data-job-kind="splat">Splat</button>
+            <button class="chip" data-job-kind="splat">${term('splat')}</button>
             <button class="chip" data-job-kind="ingest">Importación</button>
           </div>
         </div>
@@ -403,18 +406,18 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
 
     <div class="panel scene-viewer-panel">
       <div class="ph scene-viewer-head" data-no-collapse="true">
-        <div class="scene-viewer-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
-          <button type="button" class="on" role="tab" aria-selected="true" aria-controls="scene-viewer-box" data-viewer-mode="cloud">${icon('layers')} Nube</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="mesh">${icon('cube')} Malla</button>
-          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('splat')} Splat</button>
+        <div class="scene-viewer-tabs ui-tabs" id="scene-viewer-tabs" role="tablist" aria-label="Representación 3D">
+          <button type="button" class="on" role="tab" aria-selected="true" aria-controls="scene-viewer-box" data-viewer-mode="cloud">${icon('layers')} ${term('cloud')}</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="mesh">${icon('cube')} ${term('mesh')}</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="scene-viewer-box" data-viewer-mode="splat">${icon('splat')} ${term('splat')}</button>
         </div>
         <span class="chip scene-viewer-status" id="scene-viewer-status"></span>
         <span class="spacer"></span>
-        <select id="sp-select" class="scene-viewer-version" title="Versión del splat" aria-label="Versión del Splat"></select>
+        <select id="sp-select" class="scene-viewer-version" title="Versión de la escena" aria-label="Versión de la escena"></select>
         <button class="ui-button ui-button--primary" id="viewer-load">Cargar nube</button>
       </div>
       <div id="scene-viewer-box" class="scene-viewer-box" role="tabpanel" aria-live="polite" aria-label="Nube de puntos">
-        <p class="footer-note scene-viewer-note">Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.</p>
+        <p class="footer-note scene-viewer-note">Puntos con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.</p>
       </div>
     </div>
 
@@ -435,6 +438,25 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
   infoButton.addEventListener('click', () => { if (cur) sceneInfo({model:cur, processing:splatDetails(splatAssetFor(cur.clip_id)), opener:infoButton}); });
   projView.querySelector('.td-crumb').append(infoButton);
 
+  const toolsButton = document.createElement('button');
+  toolsButton.className = 'ui-button ui-button--quiet';
+  toolsButton.textContent = 'Más';
+  toolsButton.setAttribute('aria-label', 'Más opciones de escenas');
+  main.querySelector('.page-head-actions').append(toolsButton);
+  toolsButton.onclick = () => openMenu(toolsButton, [
+    {id:'projects', label:'Biblioteca', icon:'grid'},
+    {id:'process', label:'Herramientas', icon:'sliders'},
+    {id:'jobs', label:'Actividad', icon:'activity'},
+    {href:'splatlab.html', label:term('splatLab'), icon:'edit'},
+  ], {onSelect:id=>showTdMod(id)});
+  const processDiagram = main.querySelector('.td-stepper');
+  processDiagram.hidden = true;
+  document.getElementById('td-how').textContent = 'Detalles';
+  document.getElementById('td-how').onclick = e => {
+    processDiagram.hidden = false;
+    const sheet=createSheet({title:'Detalles del proceso',content:processDiagram,size:'full',className:'scene-sheet',onClose:()=>{processDiagram.hidden=true;main.querySelector('.td-flow .pb').prepend(processDiagram);sheet.destroy();}});
+    sheet.open(e.currentTarget);
+  };
   const tdTabs = document.getElementById('td-tabs');
   const tdInk = tdTabs?.querySelector('.pm-ink');
   function moveTdInk() {
@@ -1067,7 +1089,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
     const q = m.qa || {};
     const splats = splatAssetsFor(m.clip_id);
     const sp = splatAssetFor(m.clip_id);
-    const ha = q.area_m2 >= 10000 ? (q.area_m2 / 10000).toFixed(1) + ' ha' : Math.round(q.area_m2 || 0) + ' m²';
+    const ha = q.area_m2 >= 10000 ? fmt.area(q.area_m2 / 10000) : fmt.number(q.area_m2 || 0) + ' m²';
     const poster = m.thumb ? (m.thumb.includes('/') ? m.thumb : `data/models/${m.clip_id}/${m.thumb}`) : `data/models/${m.clip_id}/${m.ortho_asset || 'ortho.jpg'}`;
     return `<article class="proj-card${cur?.clip_id === m.clip_id ? ' on' : ''}" data-cid="${esc(m.clip_id)}">
       <a class="pc-cover" href="share.html?m=${encodeURIComponent(m.clip_id)}" aria-label="Ver ${esc(titleFor(m))}">
@@ -1075,13 +1097,10 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
         <span class="pc-ph" aria-hidden="true">Sin vista previa</span>
       </a>
       <div class="pc-body">
-        <div class="pc-top"><h2 class="pc-title">${esc(titleFor(m))}</h2>
+        <div class="pc-top"><h2 class="pc-title"><a href="share.html?m=${encodeURIComponent(m.clip_id)}">${esc(titleFor(m))}</a></h2>
           <button class="ui-button ui-button--quiet pc-more" data-act="more" data-cid="${esc(m.clip_id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(titleFor(m))}">${icon('more')}</button></div>
-        <p class="pc-meta">${esc([f?.date ? fmt.date(f.date) : dateKeyFor(m), q.area_m2 ? ha : '', sp ? 'Splat disponible' : 'Fotogrametría'].filter(Boolean).join(' · '))}</p>
-        <div class="pc-actions">
-          <button class="ui-button ui-button--secondary" data-act="open">Explorar</button>
-          <button class="ui-button ui-button--quiet pc-improve" data-act="improve">Mejorar</button>
-        </div>
+        <p class="pc-meta">${esc([fmt.date(f?.date || dateKeyFor(m)), q.area_m2 ? ha : '', sp ? term('splat') : term('mesh')].filter(Boolean).join(' · '))}</p>
+
       </div>
     </article>`;
   }
@@ -1093,7 +1112,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
     const shown = models.filter(projectVisible).sort(SORTS[projSort] || SORTS.recent);
     document.getElementById('proj-count').textContent = models.length ? `(${shown.length}/${models.length})` : '';
     grid.classList.toggle('proj-list', projMode === 'list');
-    document.querySelectorAll('[data-proj-mode]').forEach(b => b.classList.toggle('on', b.dataset.projMode === projMode));
+    document.querySelectorAll('[data-proj-mode]').forEach(b => (b.classList.toggle('on', b.dataset.projMode === projMode), b.setAttribute('aria-pressed', b.dataset.projMode === projMode)));
     // agrupar por LUGAR con clustering real <30 km (celdas de 0.01° vecinas = mismo grupo;
     // sin esto, tres cuadrantes de Bogotá salían como tres secciones "Bogotá")
     const groups = [];
@@ -1114,7 +1133,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
       return `
       <div class="proj-group-h">
         <b>${icon('pin')} ${esc(g.name)}</b>
-        <span>${g.items.length} escena${g.items.length === 1 ? '' : 's'}${area ? ` · ${area >= 10000 ? (area / 10000).toFixed(1) + ' ha' : Math.round(area) + ' m²'}` : ''}${nSplats ? ` · ${nSplats} splats` : ''}</span>
+        <span>${g.items.length} escena${g.items.length === 1 ? '' : 's'}${area ? ` · ${area >= 10000 ? fmt.area(area / 10000) : fmt.number(area) + ' m²'}` : ''}${nSplats ? ` · ${fmt.number(nSplats)} ${nSplats === 1 ? 'versión fotorrealista' : 'versiones fotorrealistas'}` : ''}</span>
       </div>
       <div class="proj-group">${g.items.map(projCard).join('')}</div>`;
     }).join('') : `<div class="ui-empty"><h2>${sysErr ? 'No se pudieron cargar las escenas' : models.length ? 'No hay coincidencias' : 'Aún no tienes escenas'}</h2><p>${sysErr ? 'Revisa la conexión y vuelve a intentarlo.' : models.length ? 'Prueba otro nombre o elimina los filtros.' : 'Empieza con tomas del mismo lugar, por ejemplo una órbita de tu casa.'}</p>${sysErr ? '<button class="ui-button ui-button--primary" data-reload>Reintentar</button>' : models.length ? '<button class="ui-button ui-button--secondary" data-reset-filters>Ver todas</button>' : '<button class="ui-button ui-button--primary" data-open-run3d>Crear escena</button>'}</div>`;
@@ -1164,6 +1183,8 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
   });
   // ---- menú "más" de la tarjeta: openMenu() canónico (shell.js) ----
   const openProjMenu = btn => openMenu(btn, [
+    { id: 'improve', label: 'Mejorar', icon: 'layers' },
+    { id: 'workspace', label: 'Herramientas de medición', icon: 'sliders' },
     { id: 'info', label: 'Información', icon: 'info' },
     { id: 'rename', label: 'Renombrar', icon: 'edit' },
     { id: 'share', label: 'Copiar enlace privado', icon: 'link' },
@@ -1176,7 +1197,8 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
     const m = models.find(x => x.clip_id === cid);
     if (act === 'info') { sceneInfo({model:m, processing:splatDetails(splatAssetFor(m.clip_id)), opener:btn}); return; }
     if (!m) return;
-    if (act === 'open') {
+    if (act === 'open') { location.href = `share.html?m=${encodeURIComponent(cid)}`; return; }
+    if (act === 'workspace') {
       if (card) { card.classList.add('smash'); setTimeout(() => card.classList.remove('smash'), 420); }
       setProject(cid, { scroll: true });
     }
@@ -1246,7 +1268,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
     requestAnimationFrame(() => {
       window.scrollTo({ top: listScroll, behavior: 'instant' });
       const card = [...document.querySelectorAll('.proj-card')].find(c => c.dataset.cid === cid);
-      card?.querySelector('[data-act=open]')?.focus({ preventScroll: true });
+      card?.querySelector('.pc-cover')?.focus({ preventScroll: true });
     });
   }
   document.getElementById('proj-back')?.addEventListener('click', backToList);
@@ -1868,12 +1890,14 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
       </div>`;
     };
     function openPreviewAt(cid) {
+      let previewPlayer;
       const pv = document.createElement('div');
       pv.className = 'scene-capture-preview';
-      const previewSheet = createSheet({title:'Revisar captura', content:pv, size:'full', className:'scene-sheet', onClose:()=>{pv.querySelector('video')?.pause(); removeEventListener('keydown',onKey); removeEventListener('ab:ai-ready',onAI); previewSheet.destroy();}});
+      const previewSheet = createSheet({title:'Revisar captura', content:pv, size:'full', className:'scene-sheet', onClose:()=>{previewPlayer?.destroy();pv.querySelector('video')?.pause(); removeEventListener('keydown',onKey); removeEventListener('ab:ai-ready',onAI); previewSheet.destroy();}});
       previewSheet.open();
       const auto = { on: localStorage.getItem('ab.pv.auto') === '1' };
       const render = (slideDir = 0) => {
+        previewPlayer?.destroy();
         const f = byCid[cid] || {};
         const ai = f.ai || {};
         const sc = ai.travel_score;
@@ -1900,7 +1924,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
 
           </div>
           <div class="pv-body${slideDir ? (slideDir > 0 ? ' slide-l' : ' slide-r') : ''}">
-            <video src="data/proxies/${encodeURIComponent(cid)}.mp4" controls ${reducedMotion() ? '' : 'autoplay'} muted playsinline
+            <video src="data/proxies/${encodeURIComponent(cid)}.mp4" ${reducedMotion() ? '' : 'autoplay'} muted playsinline
                    poster="data/thumbs/${encodeURIComponent(cid)}.jpg"></video>
             <div class="pv-suggestion"></div>
             ${(ai.tags || []).length ? `<div class="pv-tags">${(ai.tags || []).slice(0, 8).map(t =>
@@ -1929,6 +1953,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
           description.replaceChildren(suggestionBlock({title:'Descripción de la captura',empty:'No se pudo cargar la descripción.'}));
         }).finally(()=>description.setAttribute('aria-busy','false'));
         const v = pv.querySelector('video');
+        previewPlayer=skinPlayer(v,{label:'Captura del vuelo'});
         v.addEventListener('ended', () => { if (auto.on) step(1); });
       };
       render();
@@ -2109,9 +2134,9 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
     };
     try {
       if (window.maplibregl) {
-        stMap = new maplibregl.Map({ container: ov.querySelector('#st-map'), style: SAT_STYLE,
+        stMap = new maplibregl.Map({ ...mapSkinOptions, container: ov.querySelector('#st-map'), style: SAT_STYLE,
                                      attributionControl: false, cooperativeGestures: true });
-        stMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+        skinMap(stMap);
         spots.forEach(([sk, fs]) => {
           const c = centroid(fs[0]); if (!c) return;
           mapBounds.extend(c);
@@ -2568,20 +2593,20 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
         <a class="exp" href="${base}/contours.geojson" download>${icon('route')}<div><b>Curvas de nivel</b><span class="exp-m"><em>GeoJSON</em>CAD / GIS</span></div></a>
         <a class="exp" href="${base}/hillshade.png" download>${icon('sun')}<div><b>Relieve sombreado</b><span class="exp-m"><em>PNG</em>mapas</span></div></a>
         <a class="exp" href="${base}/dsm_color.png" download>${icon('gauge')}<div><b>Elevación color</b><span class="exp-m"><em>PNG</em>mapas</span></div></a>` : ''}
-        <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>Nube de puntos</b><span class="exp-m"><em>PLY</em>CloudCompare</span></div></a>
+        <a class="exp" href="${base}/cloud.ply" download>${icon('layers')}<div><b>${term('cloud')}</b><span class="exp-m"><em>PLY</em>CloudCompare</span></div></a>
         ${cur.cloud_copc_asset ? `<a class="exp" href="${base}/${cur.cloud_copc_asset}" download>${icon('db')}<div><b>Nube optimizada</b><span class="exp-m"><em>COPC</em>${(cur.cloud_copc_bytes / 1e6).toFixed(0)} MB · GIS</span></div></a>` : ''}
-        ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>Malla texturizada</b><span class="exp-m"><em>OBJ</em>Blender / 3D</span></div></a>` : ''}
-        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('splat')}<div><b>Splat</b><span class="exp-m"><em>${spFmt}</em>SuperSplat</span></div></a>` : ''}
+        ${meshOk ? `<a class="exp" href="${base}/${cur.model_obj}" download>${icon('cube')}<div><b>${term('mesh')}</b><span class="exp-m"><em>OBJ</em>Blender / 3D</span></div></a>` : ''}
+        ${sp ? `<a class="exp" href="${splatUrl(sp)}" download>${icon('splat')}<div><b>${term('splat')}</b><span class="exp-m"><em>${spFmt}</em>SuperSplat</span></div></a>` : ''}
         <a class="exp" href="share.html?m=${encodeURIComponent(cid)}" target="_blank" rel="noopener">${icon('ext')}<div><b>Visor privado</b><span class="exp-m"><em>LINK</em>con sesión</span></div></a>
       </div>`;
     if (omap) omap.remove();
     const b = new maplibregl.LngLatBounds();
     cur.corners.forEach(c => b.extend(c));
     omap = new maplibregl.Map({
-      container: 'omap', style: SAT_STYLE, bounds: b,
-      fitBoundsOptions: { padding: 40 }, attributionControl: { compact: true },
+      ...mapSkinOptions, container: 'omap', style: SAT_STYLE, bounds: b,
+      fitBoundsOptions: { padding: 40 },
     });
-    omap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    skinMap(omap);
     omap.on('load', () => {
       // rampa por zoom anclada al arranque de tiles: el overlay 2000px (colocado por 4 esquinas,
       // se DESALINEA al acercar por el warp UTM→Mercator) se disuelve mientras entran los tiles
@@ -2881,9 +2906,9 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
   function viewerPlaceholder(mode) {
     if (mode === 'mesh') return 'Modelo sólido con textura fotográfica — arrastra para mover, botón derecho rota y doble toque enfoca.';
     if (mode === 'splat') return splatAssetFor(cur?.clip_id)
-      ? 'Splat listo — selecciona una versión y cárgala para inspección foto-realista.'
-      : 'Este proyecto aún no tiene Splat. Entrénalo desde Procesamiento.';
-    return 'Nube con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.';
+      ? 'Escena lista — selecciona una versión y cárgala para inspección foto-realista.'
+      : 'Esta escena aún no tiene una vista fotorrealista.';
+    return 'Puntos con color real — arrastra para mover, botón derecho rota, rueda o pellizco acerca y doble toque enfoca.';
   }
 
   // invalida cualquier carga en vuelo del visor unificado Y aborta su mount de splat (que si no
@@ -2927,7 +2952,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
       tab.setAttribute('aria-selected', String(active));
       tab.disabled = availability[tab.dataset.viewerMode] === false;
       if (tab.dataset.viewerMode === 'mesh' && tab.disabled) tab.title = 'ODM marcó esta malla como no concluyente';
-      else if (tab.dataset.viewerMode === 'splat' && tab.disabled) tab.title = 'Este proyecto todavía no tiene Splat';
+      else if (tab.dataset.viewerMode === 'splat' && tab.disabled) tab.title = 'Esta escena aún no tiene una vista fotorrealista';
       else tab.title = '';
     });
     const status = document.getElementById('scene-viewer-status');
@@ -3569,7 +3594,7 @@ import { mapLayerIds, centerReplacement } from './scene-improve-state.js?v=402';
     box.innerHTML = all.length
       ? toolbar + (rows.length ? rows.map(rowHtml).join('')
         : '<p class="footer-note jf-empty">Sin splats que coincidan con estos filtros.</p>')
-      : `<p class="footer-note">Sin splats aún — "Generar splat…" entrena uno sobre las poses
+      : `<p class="footer-note">Sin splats aún — "Crear escena fotorrealista…" entrena uno sobre las poses
       del proyecto que elijas. El resultado se ve aquí mismo.</p>`;
 
     // fallback de miniatura sin onerror inline (CSP script-src 'self' lo bloquea)

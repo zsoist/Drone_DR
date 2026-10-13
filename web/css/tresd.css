@@ -494,3 +494,24 @@ html.td-open .page-3d > .page-head { display:none; }
  .page-3d .td-tabs { margin-bottom:var(--sp-4); }
  .page-3d .td-browserbar { margin-bottom:var(--sp-5); }
 }
+/* R5: one navigation layer; scene links carry the card action. */
+.page-3d .area-nav { margin-bottom:0; }
+.page-3d .page-head { margin:0; }
+.page-3d .proj-group-h svg { color:var(--text-2); }
+.page-3d .pc-title a { color:inherit; text-decoration:none; }
+.page-3d .pc-title a:hover { text-decoration:underline; text-underline-offset:4px; }
+.page-3d .pc-top { align-items:flex-start; }
+.page-3d .pc-title { min-height:2.9em; }
+.page-3d .pc-meta { margin-top:auto; }
+.page-3d .pc-body { flex:1; }
+.page-3d .proj-card { cursor:pointer; }
+@media(max-width:820px) {
+ .page-3d { row-gap:var(--sp-4); }
+ .page-3d .page-head h1 { font-size:var(--fs-2xl); }
+ .page-3d .page-head-actions { gap:var(--sp-1); }
+ .page-3d .td-browserbar { margin-bottom:var(--sp-4); }
+ .page-3d .pc-title { min-height:0; }
+}
+.td-open .page-3d > .area-nav { display:none; }
+.page-3d .pc-title a { display:flex; align-items:flex-start; min-height:44px; }
+html[data-td-tab=process] .page-3d .page-head-actions > [data-open-run3d] { display:none; }

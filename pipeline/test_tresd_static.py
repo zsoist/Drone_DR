@@ -42,7 +42,7 @@ console.log(JSON.stringify(policy.resolveActiveModel([requested, active], reques
         self.assertIn('<details class="si-advanced"', source)
         self.assertIn('Versión actual protegida', source)
         self.assertIn('max_duration_s', source)
-        self.assertIn('<option value="grandmaster">Grandmaster 40K</option>', source)
+        self.assertIn('<option value="grandmaster">${term(\'grandmaster\')}</option>', source)
         self.assertIn('<option value="extra">Extra 3D · edificio</option>', source)
         self.assertNotIn('option value="media"', source)
         self.assertNotIn('option value="rapida"', source)
