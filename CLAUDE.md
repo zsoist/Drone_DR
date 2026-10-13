@@ -201,6 +201,7 @@ docker run --entrypoint bash opendronemap/odm -c "python3 -c 'from osgeo import 
 
 ### Infrastructure and jobs
 
+- The worker launchd job (`~/Library/LaunchAgents/com.aerobrain.worker.plist`) runs `/Volumes/SSD/_system/venv/bin/python3`. The worker imports `scipy` (through `scene_manifest` and `scatter`), and `/opt/homebrew/bin/python3` does not have it. On 2026-10-13 the worker stopped for about 2 h in a crash loop for this reason. After a change to the plist, run `bash pipeline/safe_restart.sh worker`. Then read `~/Library/Logs/AeroBrain/worker.log`.
 - Docker runs in OrbStack, on demand since 2026-09-28 (`docker_ondemand.py`). It does not start with the session. It stops after 5 min without use.
 - ANY `docker` command turns OrbStack on. The probes look at `orb status` first.
 - The OrbStack limit is 8 GB. The Mac now does only post-processing. ODM runs on the PC.
