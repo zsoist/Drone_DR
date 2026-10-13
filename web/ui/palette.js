@@ -5,8 +5,8 @@
  * Optional thumbnail and suggested fields add media and one group disclosure.
  * mountPalette(items) -> {open(opener?), close(), destroy()}. One palette per shell.
  */
-import './format.js?v=416';
-import { createSheet } from './sheet.js?v=416';
+import './format.js?v=417';
+import { createSheet } from './sheet.js?v=417';
 // Pages can retain older version queries during a scoped asset bump.
 // Share registrations across module URLs so their sources still reach the shell.
 const registryKey = Symbol.for('aerobrain.palette.sources');
@@ -160,13 +160,14 @@ export function mountPalette(items = []) {
           } else if (window.icon) row.innerHTML = window.icon(item.icon || groupIcons[groupOf(item)]);
           const copy = document.createElement('span'); copy.className = 'ui-palette-copy';
           const hint = document.createElement('small');
-          hint.textContent = item.hint || (groupOf(item) === 'Acciones' ? 'Ejecutar esta acción' : 'Abrir en tu archivo');
+          hint.textContent = item.hint || (groupOf(item) === 'Acciones' ? '' : 'Abrir en tu archivo');
           copy.append(highlightedLabel(item.label, query));
           const evidence = item.matchText || (query && !Number.isFinite(fuzzyScore(query, item.label)) && item.keywords);
           if (evidence) {
             const reason = highlightedLabel(String(evidence), query); reason.className = 'ui-palette-evidence'; copy.append(reason);
           }
-          copy.append(hint); row.append(copy);
+          if (hint.textContent) copy.append(hint);
+          row.append(copy);
           row.addEventListener('mousedown', e => e.preventDefault());
           row.addEventListener('click', () => activate(i)); group.append(row);
         }

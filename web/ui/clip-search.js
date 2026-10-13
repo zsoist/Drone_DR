@@ -1,4 +1,4 @@
-import { fmt } from './format.js?v=416';
+import { fmt } from './format.js?v=417';
 // One source per shell. Cache only completed queries for this page session.
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
 export function matchEvidence(row, query) {
@@ -15,10 +15,24 @@ export function matchEvidence(row, query) {
   return 'Contenido relacionado';
 }
 async function fetchContext() {
-  const response = await fetch('/data/manifest/flights.json');
-  if (!response.ok) return [];
-  const data = await response.json(); return data.flights || [];
+  const read = async url => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Clip context unavailable');
+    return response.json();
+  };
+  const [manifest, places] = await Promise.allSettled([
+    read('/data/manifest/flights.json'), read('/api/collections?all=1'),
+  ]);
+  const flights = new Map((manifest.value?.flights || []).map(flight => [flight.clip_id, flight]));
+  for (const collection of places.value?.collections || []) {
+    if (collection.kind === 'place') for (const id of collection.clip_ids || []) {
+      flights.set(id, { ...flights.get(id), clip_id: id, collectionPlace: collection.label });
+    }
+  }
+  return [...flights.values()];
 }
+// Never show generated coordinate labels, including legacy "Zona lat,lon" names.
+const placeName = value => typeof value === 'string' && !/[−-]?\d+[.,]\d+\s*°?\s*[,;]\s*[−-]?\d+[.,]\d+/.test(value) ? value.trim() : '';
 export function createClipSearchSource({ loadContext = fetchContext } = {}) {
   let context;
   const getContext = () => context ||= Promise.resolve().then(loadContext).catch(() => { context = null; return []; });
@@ -44,8 +58,8 @@ export function createClipSearchSource({ loadContext = fetchContext } = {}) {
       const time = Math.max(0, Number(row.matched_moment?.time_s) || 0);
       const seconds = Number.isFinite(time) ? time : 0;
       const flight = flights.find(flight => flight.clip_id === row.clip_id) || {};
-      const home = flight.stats?.home;
-      const place = row.place || flight.place || flight.location_name || (Array.isArray(home) && home.length === 2 ? `${fmt.number(home[1], 3)}°, ${fmt.number(home[0], 3)}°` : '');
+      const place = [flight.collectionPlace, row.place, flight.place, flight.location_name, row.trip_label, flight.trip_label]
+        .map(placeName).find(Boolean) || 'Lugar sin identificar';
       const context = [place, fmt.date(row.date || flight.date)].filter(Boolean);
       if (seconds > 0) context.push(`a los ${fmt.clock(Math.floor(seconds))}`);
       return {

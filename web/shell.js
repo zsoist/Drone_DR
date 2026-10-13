@@ -1,11 +1,11 @@
 // App shell: sidebar nav, shared formatters, data access. Requires icons.js.
 const DATA = 'data';
 // The shell stays a classic script for existing pages. New modules can import these APIs directly.
-const formatReady = import('./ui/format.js?v=416');
+const formatReady = import('./ui/format.js?v=417');
 window.shell = {
   backLink,
-  ready: Promise.all([formatReady, import('./ui/terms.js?v=416')]).then(([{ fmt }, { term }]) => {
-    Object.assign(window.shell, { fmt, term });
+  ready: Promise.all([formatReady, import('./ui/terms.js?v=417')]).then(([{ fmt, figure }, { term }]) => {
+    Object.assign(window.shell, { fmt, figure, term });
     return window.shell;
   }),
 };
@@ -52,7 +52,7 @@ const SECTION_HINTS = {
   'home.html': 'Últimos vuelos y colecciones', 'index.html': 'Todos los videos del archivo',
   'trips.html': 'Recorridos por lugar y fecha', 'map.html': 'Ubicar tus recorridos',
   'flight.html': 'Video, ruta y datos de captura', 'studio.html': 'Editar videos y fotos',
-  'subir.html': 'Añadir videos y fotos al archivo', 'tresd.html': 'Explorar tus reconstrucciones',
+  'subir.html': 'Sube videos y fotos', 'tresd.html': 'Explorar tus reconstrucciones',
   'mundo.html': 'Terrenos y recorridos en 3D', 'splatlab.html': 'Preparar una escena fotorrealista',
   'scene-improve.html': 'Añadir detalle a una escena', 'volar.html': 'Recorrer una escena con el dron',
 };
@@ -994,9 +994,9 @@ document.addEventListener('click', async e => {
 
 // Public palette bridge for classic page scripts. ES modules can import palette.js directly.
 const shellComponents = Promise.all([
-  import('./ui/sheet.js?v=416'), import('./ui/palette.js?v=416'),
-  import('./ui/activity.js?v=416'), import('./ui/toast.js?v=416'),
-  import('./ui/clip-search.js?v=416'),
+  import('./ui/sheet.js?v=417'), import('./ui/palette.js?v=417'),
+  import('./ui/activity.js?v=417'), import('./ui/toast.js?v=417'),
+  import('./ui/clip-search.js?v=417'),
 ]);
 function registerPaletteSource(fn) {
   let cancelled = false, unregister;
@@ -1097,9 +1097,9 @@ function renderShell(active, { navigationOnly = false } = {}) {
     document.addEventListener('ab-theme-change', themeControls); themeControls();
     const palette = mountPalette([
       ...SECTIONS.map(n => ({ id: n.href, label: n.label, href: n.href, icon: n.ic, group: n.group || 'Secciones', hint: n.hint || SECTION_HINTS[n.href] || 'Abrir esta sección', keywords: n.keywords || '' })),
-      { id: 'theme', label: 'Cambiar tema', icon: 'sun', group: 'Acciones', keywords: 'claro oscuro apariencia', action: toggleTheme },
-      { id: 'system-theme', label: 'Usar tema automático', icon: 'sliders', group: 'Acciones', action: () => window.AeroTheme?.set('system') },
-      { id: 'new-reel', label: 'Nuevo reel', icon: 'film', group: 'Acciones', keywords: 'crear editar video', href: 'studio.html' },
+      { id: 'theme', label: 'Cambiar tema', hint: 'Alterna entre claro y oscuro', icon: 'sun', group: 'Acciones', keywords: 'claro oscuro apariencia', action: toggleTheme },
+      { id: 'system-theme', label: 'Usar tema automático', hint: 'Sigue la apariencia del dispositivo', icon: 'sliders', group: 'Acciones', action: () => window.AeroTheme?.set('system') },
+      { id: 'new-reel', label: 'Nuevo reel', hint: 'Abre el editor', icon: 'film', group: 'Acciones', keywords: 'crear editar video', href: 'studio.html' },
     ]);
     document.querySelectorAll('[data-palette]').forEach(b => b.addEventListener('click', () => palette.open(b)));
     const stopActivity = mountActivity();

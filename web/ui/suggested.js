@@ -5,6 +5,18 @@ export function Suggested({ content, onAccept, onDismiss } = {}) {
   const label = document.createElement('span'); label.className = 'ui-suggested-label'; label.textContent = 'Sugerido';
   const body = document.createElement('div'); body.className = 'ui-suggested-content';
   if (content instanceof Node) body.append(content); else body.textContent = content ?? '';
+  let wasEmpty = false;
+  const syncContent = () => {
+    const empty = !body.textContent.trim() && !body.querySelector('img, video, audio, canvas, svg');
+    element.hidden = empty;
+    if (empty && !wasEmpty && ['localhost', '127.0.0.1', '[::1]'].includes(globalThis.location?.hostname)) {
+      console.warn('Suggested requires content. The empty suggestion was hidden.');
+    }
+    wasEmpty = empty;
+  };
+  syncContent();
+  // Some pages fill this wrapper after an async read. Reveal it only with content.
+  new MutationObserver(syncContent).observe(body, { childList: true, subtree: true, characterData: true });
   const actions = document.createElement('div'); actions.className = 'ui-suggested-actions';
   const status = document.createElement('p'); status.className = 'ui-suggested-status'; status.setAttribute('role', 'status'); status.hidden = true;
   for (const [text, callback] of [['Aceptar', onAccept], ['Descartar', onDismiss]]) {
