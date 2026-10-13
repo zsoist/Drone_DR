@@ -340,3 +340,40 @@
  .st-page .st-ph-actions {margin-left:0;}
  .st-page .tl-editor:has(#tl-empty:not([hidden])) .st-ph-actions {width:100%;}
 }
+
+/* R6: keep the editor at the top and secondary project actions in one sheet. */
+.st-page .st-library-count {display:none;}
+.st-page .st-heading {flex-wrap:nowrap;margin-bottom:var(--sp-2);}
+.st-page .st-heading .st-tabs {margin-right:auto;}
+.st-page .st-heading .ui-button {flex-shrink:0;}
+.st-page .tl-stage:has(.tl-empty:not([hidden])) {background:var(--surface);}
+.st-page .tl-empty {background:transparent;}
+.st-page #tl-toolbar[hidden] {display:none;}
+.st-page .tl-scroll.is-empty {margin-top:var(--sp-3);display:grid;place-items:center;}
+.st-page .tl-scroll.is-empty::after {content:'Arrastra una toma aquí o elígela en la biblioteca';padding:var(--sp-4);color:var(--text-2);font-size:var(--fs-sm);text-align:center;}
+.st-page .tl-scroll.is-empty :is(.tl-track,.tl-ruler) {display:none;}
+.st-page .st-analysis-heading {display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2);font-size:var(--fs-xs);color:var(--text-2);}
+.st-page .st-source-caption {margin-top:var(--sp-2);font-size:var(--fs-sm);}
+.st-page .st-source-caption summary {min-height:44px;cursor:pointer;display:flex;align-items:center;gap:var(--sp-2);font-weight:500;}
+.st-page .st-source-caption summary .ic {margin-left:auto;flex:none;color:var(--text-2);}
+.st-page .st-source-caption[open] summary .ic {transform:rotate(180deg);}
+.st-page .st-source-caption p {margin:0 0 var(--sp-3);color:var(--text-2);line-height:var(--lh-base);}
+.st-project-options .st-ph {display:block;}
+.st-project-options .st-ph-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:var(--sp-3);}
+.st-project-options .st-ph-actions .btn {justify-content:flex-start;}
+.st-project-options .st-save-state {display:block;margin-bottom:var(--sp-2);}
+.st-project-options #tl-stat {display:inline-block;}
+.st-project-options :is(#st-save-state,#tl-stat)[hidden] {display:none;}
+.st-project-options .st-help {padding-inline:0;}
+.st-page.st-has-project[data-module=editor] .st-heading>a {display:none;}
+@media(max-width:1200px) {
+ .st-page .st-heading {flex-wrap:wrap;}
+ .st-page .st-heading .st-tabs {order:5;flex-basis:100%;margin:0;}
+ .st-page .st-heading h1 {margin-right:auto;}
+}
+@media(max-width:640px) {
+ .st-page .st-heading #st-project-open span {display:none;}
+ .st-page .st-heading #st-project-open {min-width:44px;padding-inline:var(--sp-2);}
+ .st-page .st-heading .st-tabs {display:flex;}
+ .st-page .st-heading {gap:var(--sp-1);}
+}

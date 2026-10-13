@@ -5,7 +5,7 @@ import { fmt } from './ui/format.js?v=415';
 import { mountTabs } from './ui/tabs.js?v=415';
 import { Suggested } from './ui/suggested.js?v=415';
 import { skinPlayer } from './ui/player.js?v=415';
-import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition } from './studio.logic.js?v=415';
+import { segmentDuration, sourceTime, splitSegment, joinOverlap, missingSources, highlightSuggestions, analysisCaption, reelPosition } from './studio.logic.js?v=417';
 
 // The shared player owns chrome; this adapter maps its single scrubber to the cut list.
 function mountReelPreview(video, segments, sourceURL, onSegment) {
@@ -116,7 +116,7 @@ const main = renderShell('studio.html');
 main.classList.add('st-page', 'ab-page', 'ab-page--wide');
 main.dataset.module = 'editor';
 main.innerHTML = `
-  <header class="st-heading"><h1>Studio</h1><span class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</span><button class="ui-button ui-button--quiet" id="st-auto-start">Reel automático</button><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
+  <header class="st-heading"><h1>Studio</h1><span class="st-library-count" id="st-count" aria-live="polite">Cargando biblioteca…</span><button class="ui-button ui-button--quiet" id="st-project-open" aria-label="Opciones del proyecto">${icon('folder')}<span>Proyecto</span></button><button class="ui-button ui-button--quiet" id="st-auto-start">Reel automático</button><a class="ui-button ui-button--primary" href="subir.html">${icon('plus')} Subir</a></header>
 
   <div class="ui-tabs st-tabs" id="st-tabs" role="tablist" aria-label="Módulos de Studio">
     <button class="on" data-tab="editor" role="tab" aria-controls="st-panel-editor" aria-selected="true">${icon('film')} Editor</button>
@@ -191,7 +191,6 @@ main.innerHTML = `
               <button class="btn icon sm ghost" data-tool="clear" data-tip="Vaciar todo el montaje" aria-label="Vaciar timeline">${icon('broom')}</button>
             </div>
             <div class="tb-g">
-              <button class="btn sm ghost tb-ai" data-tool="magic" id="btn-magic" data-tip="Autoarmar el reel con los mejores momentos" aria-label="Reel automático">${icon('film')}<span>Reel automático</span></button>
               <button class="btn icon sm ghost" data-tool="music" id="btn-music" data-tip="Ponle música al reel (tu biblioteca)" aria-label="Música">${icon('volume')}</button>
               <button class="btn icon sm ghost" data-tool="text" id="btn-text" data-tip="Añadir texto en el playhead (T)" aria-label="Añadir texto">${icon('tag')}</button>
             </div>
@@ -586,6 +585,7 @@ main.innerHTML = `
 // ---- tabs de módulo con tinta deslizante (mismo patrón que el photo editor) ----
 document.querySelector('.st-heading').append(document.getElementById('exportbar'));
 const stTabs = document.getElementById('st-tabs');
+document.querySelector('.st-heading h1').after(stTabs);
 const moduleTabs = mountTabs(stTabs, { onChange: tab => showMod(tab.dataset.tab) });
 function showMod(name) {
   main.dataset.module = name;
@@ -593,6 +593,7 @@ function showMod(name) {
   document.querySelector('.st-heading>a').classList.toggle('ui-button--primary', name !== 'editor' || !main.classList.contains('st-has-project'));
   moduleTabs.select(stTabs.querySelector(`[data-tab="${name}"]`), false);
   document.getElementById('st-auto-start').hidden = name === 'jobs';
+  document.getElementById('st-project-open').hidden = name !== 'editor';
   document.querySelectorAll('.st-mod').forEach(panel => {
     panel.style.display = '';
     if (panel.dataset.mod !== name) {
@@ -1552,7 +1553,7 @@ pollJobs(jobsEl, 2500, j => {
   const timeEl  = document.getElementById('tl-time');
   const exportbar = document.getElementById('exportbar');
 
-  if (editable[0]) video.poster = `${DATA}/thumbs/${encodeURIComponent(editable[0].clip_id)}.jpg`;
+  // The empty stage has no source frame until the owner chooses a take.
   video.muted = muted;
   video.loop = false;   // el bucle lo maneja el compositor, no el <video>
 
@@ -1605,7 +1606,18 @@ pollJobs(jobsEl, 2500, j => {
   const inspectHome = inspect.parentElement;
   const inspectButton = document.createElement('button'); inspectButton.className = 'ui-button ui-button--secondary';
   inspectButton.id='st-inspect-open'; inspectButton.textContent='Ajustar toma'; inspectButton.disabled=true;
-  document.querySelector('.st-ph-actions').prepend(inspectButton);
+  document.querySelector('.tb-g:has([data-tool="razor"])').prepend(inspectButton);
+  const projectContent = document.createElement('div');
+  projectContent.className = 'st-project-options';
+  projectContent.append(document.querySelector('.st-ph'), document.getElementById('tl-help'));
+  const uploadLink = document.createElement('a'); uploadLink.href = 'subir.html';
+  uploadLink.className = 'ui-button ui-button--quiet'; uploadLink.textContent = 'Subir videos y fotos';
+  projectContent.append(uploadLink);
+  const projectSheet = createSheet({title:'Proyecto', content:projectContent, size:'peek', className:'st-sheet'});
+  document.getElementById('st-project-open').onclick = event => projectSheet.open(event.currentTarget);
+  projectContent.addEventListener('click', event => {
+    if (event.target.closest('#ed-new,#ed-save,#ed-open')) projectSheet.close();
+  }, true);
   inspectButton.onclick = () => {
     if (!tl.length) return toast('Añade una toma para ajustar su color, velocidad o título.');
     if (sel < 0) sel = 0; renderInspector();
@@ -1658,6 +1670,9 @@ pollJobs(jobsEl, 2500, j => {
     exportbar.style.display = tl.length ? 'flex' : 'none';
     if (typeof autosave === 'function') autosave();   // cada cambio queda a salvo de un F5
     emptyEl.hidden = tl.length > 0;
+    document.getElementById('tl-toolbar').hidden = !tl.length;
+    document.getElementById('st-save-state').hidden = !tl.length;
+    statEl.hidden = !tl.length;
     layoutMask();
     playhead = Math.min(playhead, total());
     phEl.style.display = tl.length ? '' : 'none';
@@ -2119,15 +2134,14 @@ pollJobs(jobsEl, 2500, j => {
     }
     const content = document.createElement('div');
     const duration = suggestions.reduce((sum,h)=>sum+h.b-h.a,0);
-    const durationLabel = fmt.duration(duration).split(' ').map((part,i)=>`<span class="${i%2 ? 'ui-unit' : 'ui-figure'}">${part}</span>`).join(' ');
-    content.innerHTML = `<p class="st-note"><span class="ui-figure">${fmt.number(suggestions.length)}</span> tomas · ${durationLabel}</p>
+    content.innerHTML = `<p class="st-note">${fmt.number(suggestions.length)} tomas · ${fmt.duration(duration)}</p>
       <video muted playsinline preload="metadata" class="st-suggestion-video" aria-label="Vista previa del reel"></video>
       <div class="st-suggestion-list">${suggestions.map((h,i) => {
         const flight = byId[h.cid];
         return `<article class="st-suggestion-item">
           <button class="st-suggestion-row ui-button ui-button--quiet" data-moment="${i}" aria-label="Ver toma ${i+1}: ${esc(h.caption)}">
             <img src="${DATA}/thumbs/${encodeURIComponent(h.cid)}.jpg" alt="" width="96" height="54">
-            <span><b>${esc(h.caption)}</b><small>${esc(flight.label || fmt.date(flight.date))} · <span class="ui-figure">${fmt.clock(h.a)}–${fmt.clock(h.b)}</span></small></span>
+            <span><b>${esc(h.caption)}</b><small>${esc(flight.label || fmt.date(flight.date))} · ${fmt.clock(h.a)}–${fmt.clock(h.b)}</small></span>
           </button>
           ${h.description ? `<details class="st-analysis-detail"><summary aria-label="Descripción de la toma ${i+1}">${icon('chevD')}</summary><p>${esc(h.description)}</p></details>` : ''}
         </article>`;
@@ -3297,6 +3311,10 @@ pollJobs(jobsEl, 2500, j => {
   const qualityLabels = {inestable:'Inestable', horizonte:'Horizonte', sobreexpuesto:'Sobreexpuesto'};
   const libraryContent = main.querySelector('.st-library-content');
   const librarySuggestion = Suggested({content: libraryContent});
+  const analysisHeading = document.createElement('div'); analysisHeading.className = 'st-analysis-heading';
+  const analysisTitle = document.createElement('span'); analysisTitle.textContent = 'Descripciones y etiquetas';
+  analysisHeading.append(analysisTitle, librarySuggestion.querySelector('.ui-suggested-label'));
+  librarySuggestion.prepend(analysisHeading);
   main.querySelector('.tl-lib').append(librarySuggestion);
   const moreLibrary = document.getElementById('st-library-more');
   let onlyClean = false, insightsLoaded = false, libraryLimit = 12;
@@ -3313,6 +3331,7 @@ pollJobs(jobsEl, 2500, j => {
       railDay = f.date;
       const tags = (insight?.tags || []).map(tag => tag.toLowerCase() === 'drone' ? 'dron' : tag).slice(0,2);
       const flags = (insight?.quality_flags || []).filter(flag => qualityLabels[flag]);
+      const caption = insight?.caption_short || (insight?.caption ? analysisCaption(insight.caption) : '');
       return `${day}<div class="st-source-card">
         <div class="cr-item" role="button" tabindex="0" aria-label="Añadir ${esc(f.label || f.clip_id)}" title="${esc([f.label, fmtDayShort(f.date), f.time].filter(Boolean).join(' · '))}" draggable="true" data-cid="${f.clip_id}" data-frames="${f.frame_count || 0}">
           <img src="${DATA}/thumbs/${f.clip_id}.jpg" loading="lazy" alt="" width="320" height="180">
@@ -3320,6 +3339,7 @@ pollJobs(jobsEl, 2500, j => {
           <span class="cr-lb" aria-label="Duración ${fmt.dur(f.duration_s)}">${fmt.dur(f.duration_s)}</span>
           <button class="cr-ins" data-ins="${f.clip_id}" data-tip="Insertar aquí" aria-label="Insertar aquí">${icon('plus')}</button>
         </div>
+        ${caption ? `<details class="st-source-caption"><summary><span>${esc(caption)}</span>${icon('chevD')}</summary><p>${esc(insight.caption || caption)}</p></details>` : ''}
         <div class="st-source-tags">${tags.map(tag=>`<span class="ui-chip">${esc(tag)}</span>`).join('')}</div>
         ${flags.length ? `<div class="st-source-flags">${flags.map(flag=>`<span>${esc(qualityLabels[flag])}</span>`).join('')}</div>` : ''}
         ${!insightsLoaded && !insight ? '<span class="ui-skeleton ui-skeleton--text" aria-hidden="true"></span>' : ''}
@@ -3887,7 +3907,7 @@ pollJobs(jobsEl, 2500, j => {
       <div class="ce-h">
         <div class="ce-t">
           <b>${esc(f.label) || fmt.date(f.date) + ' · ' + (f.time || '')}</b>
-          <span>Corte <span class="ui-figure">${i + 1}</span> de <span class="ui-figure">${tl.length}</span> · fuente ${fmt.duration(f.duration_s)}</span>
+          <span>Corte ${i + 1} de ${tl.length} · fuente ${fmt.duration(f.duration_s)}</span>
         </div>
         <span class="u-f1 spacer"></span>
         <button class="btn icon ghost rv-x" data-ce="close" aria-label="Cerrar">${icon('close')}</button>
