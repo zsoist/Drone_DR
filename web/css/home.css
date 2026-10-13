@@ -91,3 +91,12 @@
 }
 
 .home-page .ui-suggested-content { max-width:none; min-width:0; }
+
+.home-collection-controls { display:flex; margin-left:auto; }
+.home-collections { scrollbar-width:thin; scrollbar-color:var(--line-strong) var(--surface); scroll-padding-inline:2px; }
+.home-collection-section>.home-section-head { align-items:center; }
+.home-collection-section .home-section-head { flex-wrap:wrap; }
+.home-recent-section .ui-suggested { border:0; padding-block:0; }
+.home-recent-section .ui-suggested-label { margin:0; }
+
+.home-cover-empty { display:grid; place-items:center; aspect-ratio:16/10; background:var(--surface); border-radius:var(--r-lg); color:var(--text-2); font-size:var(--fs-sm); }

@@ -1,6 +1,6 @@
-import { fmt } from './ui/format.js?v=416';
-import { readAI, loadInsights, captionView } from './home.ai.js?v=416';
-import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, figure, suggestedContent } from './home-shared.js?v=416';
+import { fmt } from './ui/format.js?v=418';
+import { readAI, loadInsights, captionView, bestCover, flightCaption } from './home.ai.js?v=418';
+import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, suggestedContent } from './home-shared.js?v=418';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
@@ -24,11 +24,11 @@ async function load() {
     main.innerHTML = `
       <header class="home-heading"><h1>Inicio</h1><nav class="home-quick" aria-label="Acciones rápidas"><a class="ui-button ui-button--quiet" href="trips.html?view=map">${icon('map')} Explorar mapa</a><a class="ui-button ui-button--quiet" href="studio.html">${icon('film')} Crear reel</a><a class="ui-button ui-button--quiet" href="studio.html?via=subir">${icon('plus')} Subir</a></nav></header>
       <section class="home-feature">
-        <a class="home-feature-media" href="${flightLink(latest)}" aria-label="Ver último vuelo" data-transition-key="clip-${esc(latest.clip_id)}"><img src="${frameFor(latest, latest.ai?.highlights?.[0]?.t)}" alt="Vista aérea del último vuelo" fetchpriority="high"></a>
-        <div class="home-feature-copy"><p class="home-date">Último vuelo · ${esc(latest.time || '')}</p><h2>${esc(latest.label || fmt.date(latest.date))}</h2><div id="home-summary" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div><div class="home-flight-meta"><span>${figure(fmt.duration(latest.duration_s))} en el aire</span><span>${figure(fmt.distance(latest.stats?.distance_m))} de recorrido</span></div><a class="ui-button ui-button--primary" href="${flightLink(latest)}">${icon('play')} Ver vuelo</a></div>
+        <a class="home-feature-media" href="${flightLink(latest)}" aria-label="Ver último vuelo" data-transition-key="clip-${esc(latest.clip_id)}"><img src="${frameFor(latest)}" alt="Vista aérea del último vuelo" fetchpriority="high"></a>
+        <div class="home-feature-copy"><p class="home-date">Último vuelo · ${esc(latest.time || '')}</p><h2>${esc(latest.label || fmt.date(latest.date))}</h2><div id="home-summary" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div><div class="home-flight-meta"><span>${esc(fmt.duration(latest.duration_s))} en el aire</span><span>${esc(fmt.distance(latest.stats?.distance_m))} de recorrido</span></div><a class="ui-button ui-button--primary" href="${flightLink(latest)}">${icon('play')} Ver vuelo</a></div>
       </section>
-      <section class="home-section home-collection-section"><div class="home-section-head"><h2>Colecciones</h2><a class="ui-button ui-button--quiet" href="trips.html">Ver viajes ${icon('arrowR')}</a></div><div id="home-collections" aria-busy="true">${skeleton(3)}</div></section>
-      <section class="home-section home-recent-section"><div class="home-section-head"><h2>Vuelos recientes</h2><a class="ui-button ui-button--quiet" href="index.html">Ver todos ${icon('arrowR')}</a></div><div class="home-recent" id="home-recent">${flights.slice(1, 5).map(f => `<a href="${flightLink(f)}" class="home-recent-item" data-clip="${esc(f.clip_id)}"><img src="${frameFor(f)}" alt="" loading="lazy"><span><strong>${esc(titleFor(f))}</strong><span>${esc(fmt.date(f.date))} · ${esc(f.time || '')} · ${figure(fmt.duration(f.duration_s))}</span></span>${icon('arrowR')}</a>`).join('') || '<p>Tu próximo vuelo aparecerá aquí.</p>'}</div></section>
+      <section class="home-section home-collection-section"><div class="home-section-head"><h2>Colecciones</h2><div class="home-collection-controls"><button class="ui-button ui-button--quiet" id="collections-prev" aria-label="Colecciones anteriores" disabled>${icon('arrowL')}</button><button class="ui-button ui-button--quiet" id="collections-next" aria-label="Más colecciones">${icon('arrowR')}</button></div><a class="ui-button ui-button--quiet" href="trips.html">Ver viajes ${icon('arrowR')}</a></div><div id="home-collections" aria-busy="true">${skeleton(3)}</div></section>
+      <section class="home-section home-recent-section"><div class="home-section-head"><h2>Vuelos recientes</h2><a class="ui-button ui-button--quiet" href="index.html">Ver todos ${icon('arrowR')}</a></div><div class="home-recent" id="home-recent">${flights.slice(1, 5).map(f => `<a href="${flightLink(f)}" class="home-recent-item" data-clip="${esc(f.clip_id)}"><img src="${frameFor(f)}" alt="" loading="lazy"><span><strong>${esc(titleFor(f))}</strong><span>${esc(fmt.date(f.date))} · ${esc(f.time || '')} · ${esc(fmt.duration(f.duration_s))}</span></span>${icon('arrowR')}</a>`).join('') || '<p>Tu próximo vuelo aparecerá aquí.</p>'}</div></section>
       <section class="home-section home-bottom">${events.length ? `<div><h2>Actividad reciente</h2><ul class="home-activity">${events.map(event => `<li><a href="${esc(event.href)}"><strong>${esc(event.text)}</strong><span>${esc(fmt.relative(event.finished * 1000))}</span></a></li>`).join('')}</ul></div>` : ''}${jobsError ? '<p class="w2-note">No se pudo cargar la actividad. <button class="ui-button ui-button--quiet" id="home-jobs-retry">Reintentar</button></p>' : ''}</section>`;
     loadCollections(flights);
     loadRecent(flights.slice(0, 5));
@@ -47,9 +47,18 @@ async function loadCollections(flights) {
       const members = flights.filter(f => c.clip_ids.includes(f.clip_id));
       const duration = Math.round(members.reduce((sum, f) => sum + (Number(f.duration_s) || 0), 0));
       const durationText = fmt.duration(duration) + (duration >= 3600 && duration % 60 ? ` ${fmt.duration(duration % 60)}` : '');
-      return `<a class="home-collection" href="index.html?collection=${encodeURIComponent(c.id)}&v=list"><img src="${esc(c.image)}" alt="" loading="lazy"><h4>${esc(c.label)}</h4><p>${figure(fmt.number(c.count))} clips · ${figure(durationText)}</p></a>`;
+      return `<a class="home-collection" href="index.html?collection=${encodeURIComponent(c.id)}&v=list">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : '<div class="home-cover-empty">Sin portada seleccionada</div>'}<h4>${esc(c.label)}</h4><p>${esc(fmt.number(c.count))} clips · ${esc(durationText)}</p></a>`;
     }).join('')}</div></section>`).join('')}</div>`;
     region.replaceChildren(collections.length ? suggestedContent(html) : Object.assign(document.createElement('p'), { className: 'w2-note', textContent: 'Las colecciones aparecerán cuando haya vuelos analizados.' }));
+    const track = region.querySelector('.home-collections');
+    if (track) {
+      const prev = document.getElementById('collections-prev'), next = document.getElementById('collections-next');
+      const update = () => { prev.disabled = track.scrollLeft < 2; next.disabled = track.scrollLeft + track.clientWidth >= track.scrollWidth - 2; };
+      for (const [button, direction] of [[prev, -1], [next, 1]]) button.onclick = () => track.scrollBy({ left: direction * track.clientWidth * .8, behavior: document.documentElement.dataset.motion === 'reduced' ? 'instant' : 'smooth' });
+      track.addEventListener('scroll', update, { passive: true });
+      const resize = new ResizeObserver(update); resize.observe(track);
+      addEventListener('pagehide', () => resize.disconnect(), { once: true }); update();
+    }
   } catch { region.innerHTML = '<p class="w2-note">No se pudieron cargar las colecciones. <button class="ui-button ui-button--quiet" id="collections-retry">Reintentar</button></p>'; region.querySelector('button').addEventListener('click', () => loadCollections(flights)); }
   finally { region.setAttribute('aria-busy', 'false'); }
 }
@@ -74,31 +83,21 @@ function recentEvents(jobs, flights) {
     }).slice(0, 3);
 }
 async function collectionCovers(collections, flights) {
-  const used = new Set(), insights = new Map(), covers = [];
-  const imageKey = url => new URL(url, location.href).href;
-  // Reserve owner covers before selecting suggestions, even when they appear later.
-  const owned = new Set(collections.filter(c => c.cover.selection === 'owner').map(c => imageKey(c.cover.frame_url)));
+  const used = new Set(collections.filter(c => c.cover?.selection === 'owner').map(c => c.cover.frame_url.replace(/^\//, '')));
+  const covers = [];
   for (const collection of collections) {
-    let cover = collection.cover.frame_url;
-    if ((collection.cover.selection !== 'owner' && /persona|pareja|brazo|primer plano/i.test(collection.cover.caption_short || collection.caption_short || '')) || used.has(imageKey(cover)) || (owned.has(imageKey(cover)) && collection.cover.selection !== 'owner')) {
-      const candidates = flights.filter(f => collection.clip_ids.includes(f.clip_id))
-        .sort((a, b) => (b.ai?.travel_score || 0) - (a.ai?.travel_score || 0));
-      let alternate;
-      for (const flight of candidates) {
-        if (!insights.has(flight.clip_id)) {
-          insights.set(flight.clip_id, readAI(`/api/clip/${encodeURIComponent(flight.clip_id)}/insight`).catch(() => null));
-        }
-        const insight = (await insights.get(flight.clip_id))?.insight;
-        if (/^(persona|pareja|brazo)/i.test(insight?.caption_short || '')) continue;
-        const times = [...(insight?.best_frame_times || []).filter(t => t > 0), ...(flight.ai?.highlights || []).map(h => h.t)];
-        alternate = times.filter(t => Number.isFinite(t) && flight.frame_count > 0)
-          .map(t => frameFor(flight, t)).find(url => !used.has(imageKey(url)) && !owned.has(imageKey(url)));
-        if (alternate) break;
-      }
-      if (alternate) cover = alternate;
+    if (collection.cover?.selection === 'owner') { covers.push(collection.cover.frame_url); continue; }
+    const candidates = flights.filter(f => collection.clip_ids.includes(f.clip_id))
+      .sort((a, b) => (b.clip_id === collection.cover?.clip_id) - (a.clip_id === collection.cover?.clip_id)
+        || (b.ai?.travel_score || 0) - (a.ai?.travel_score || 0));
+    let cover;
+    for (const flight of candidates) {
+      const { insights } = await loadInsights([flight]);
+      cover = await bestCover(flight, insights[flight.clip_id], { exclude: used });
+      if (cover) break;
     }
-    used.add(imageKey(cover));
-    covers.push(cover);
+    if (cover) used.add(cover.url);
+    covers.push(cover?.url || '');
   }
   return covers;
 }
@@ -116,12 +115,13 @@ async function loadRecent(rows) {
   for (const f of rows) {
     const entry = document.querySelector(`.home-recent-item[data-clip="${f.clip_id}"]`);
     if (!entry) continue;
-    const short = insights[f.clip_id]?.caption_short;
-    entry.querySelector('strong').textContent = [place(f), f.label || short || 'Vuelo'].filter(Boolean).join(' · ');
+    entry.querySelector('strong').textContent = flightCaption(f, insights[f.clip_id]);
   }
   const latest = rows[0], insight = insights[latest.clip_id];
   document.querySelector('.home-feature h2').textContent = latest.label || place(latest) || fmt.date(latest.date);
   document.querySelector('.home-date').textContent = `Último vuelo · ${fmt.date(latest.date)} · ${latest.time || ''}`;
+  const cover = await bestCover(latest, insight);
+  if (cover) document.querySelector('.home-feature-media img').src = cover.url;
   region.replaceChildren();
   if (insight?.caption_short) region.append(suggestedContent(captionView(insight)));
   else if (failed) region.textContent = 'No se pudo cargar el resumen.';

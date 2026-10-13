@@ -6,5 +6,3 @@
 .ai-clip-chips { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); }
 .ai-clip-chips a { display:inline-flex; align-items:center; min-height:44px; text-decoration:none; font:var(--fs-xs)/var(--lh-base) var(--font); }
 .ai-quality { color:var(--text-2); padding-inline:var(--sp-2); }
-
-.ai-tag { padding:2px 8px; border-radius:var(--r-sm); background:var(--surface-2); color:var(--text-2); font:var(--fs-xs)/var(--lh-base) var(--font); }
