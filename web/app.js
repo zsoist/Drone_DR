@@ -1,9 +1,9 @@
-import { thumbnailURL } from './ui/thumbnail.js?v=432';
-import { fmt } from './ui/format.js?v=432';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=432';
-import { skinPlayer } from './ui/player.js?v=432';
-import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=432';
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=432';
+import { thumbnailURL } from './ui/thumbnail.js?v=433';
+import { fmt } from './ui/format.js?v=433';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=433';
+import { skinPlayer } from './ui/player.js?v=433';
+import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=433';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=433';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 // The clip library belongs to Viajes, including collection and tag links.

@@ -6,7 +6,8 @@ test('unreviewed, dark, text, person, and unrelated frames fail closed',()=>{
  const candidates=[frame(1,0,undefined),frame(2,12,{eligible:false,reasons:['dark_frame']}),frame(3,24,{eligible:true,reasons:['text_or_sign']}),frame(4,36,{eligible:false,reasons:['person']}),{...frame(5),clip_id:'other'},frame(6)];
  delete candidates[0].quality;
  assert.deepEqual(galleryFrames({clip:'clip',gallery:candidates}),['/data/frames/clip/f_0006.jpg']);
- assert.equal(propertyCover({clip:'clip'},[]),'');
+ assert.equal(propertyCover({clip:'clip'},[]),'data/thumbs/clip.jpg');   // owner clip thumbnail
+ assert.equal(propertyCover({}),'');
  assert.deepEqual(galleryFrames({clip:'clip'}, {frame_count:100}),[]);
 });
 test('gallery uses reviewed URLs, limits six views, and spaces their times',()=>{
@@ -19,7 +20,7 @@ test('gallery uses reviewed URLs, limits six views, and spaces their times',()=>
 });
 test('saved galleries cannot bypass quality or permit external URLs',()=>{
  assert.deepEqual(galleryFrames({clip:'clip',gallery:['data/frames/clip/f_0001.jpg']},[]),[]);
- assert.equal(propertyCover({clip:'clip',cover:{...frame(1),frame_url:'https://bad.test/a.jpg'}}),'');
+ assert.equal(propertyCover({clip:'clip',cover:{...frame(1),frame_url:'https://bad.test/a.jpg'}}),'data/thumbs/clip.jpg');
 });
 test('legacy description loses repeated observation wording without changing owner copy',()=>{
  const descripcion='El entorno visible incluye un valle. Se observa una calle entre las construcciones. Se observan montañas en el paisaje.';
@@ -28,5 +29,5 @@ test('legacy description loses repeated observation wording without changing own
 });
 test('property cover uses the approved API object without an insight request',()=>{
  assert.equal(propertyCover({clip:'clip',cover:frame(1)}),'/data/frames/clip/f_0001.jpg');
- assert.equal(propertyCover({clip:'clip',cover:{...frame(1),quality:null}}),'');
+ assert.equal(propertyCover({clip:'clip',cover:{...frame(1),quality:null}}),'data/thumbs/clip.jpg');
 });

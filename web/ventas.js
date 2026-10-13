@@ -1,19 +1,14 @@
-import { fmt } from './ui/format.js?v=432';
-import { Suggested } from './ui/suggested.js?v=432';
-import { propertyCover, propertyMedia } from './p.logic.js?v=432';
-import { canonicalPropertyURL } from './ventas.logic.js?v=432';
-import { createSheet } from './ui/sheet.js?v=432';
-import { showToast } from './ui/toast.js?v=432';
-import { registerPaletteSource } from './ui/palette.js?v=432';
+import { fmt } from './ui/format.js?v=433';
+import { Suggested } from './ui/suggested.js?v=433';
+import { propertyCover } from './p.logic.js?v=433';
+import { canonicalPropertyURL } from './ventas.logic.js?v=433';
+import { createSheet } from './ui/sheet.js?v=433';
+import { showToast } from './ui/toast.js?v=433';
+import { registerPaletteSource } from './ui/palette.js?v=433';
 
 const main = renderShell('ventas.html');
 main.classList.add('ab-page', 'vt-page');
 let properties = [], flights = [], reels = [], editor = null;
-const mediaByClip = new Map();
-async function loadPropertyMedia(clip) {
-  if (!mediaByClip.has(clip)) mediaByClip.set(clip, await propertyMedia(clip, authFetch));
-  return mediaByClip.get(clip);
-}
 const fields = [['titulo','Nombre','Casa campestre en Cajicá'],['slug','Nombre del enlace','casa-cajica'],['ubicacion','Ubicación','Cajicá, Cundinamarca'],['precio','Precio','850.000.000 COP'],['area','Área (m²)','240'],['habitaciones','Habitaciones','4'],['banos','Baños','3'],['parqueaderos','Parqueaderos','2'],['estrato','Estrato','5'],['whatsapp','WhatsApp con indicativo','573001234567'],['telefono','Teléfono','300 123 4567']];
 async function read(url, options) {
   const r = await authFetch(url, options), d = await r.json();
@@ -30,9 +25,8 @@ async function loadList() {
     // The list endpoint only returns title and price. Load the saved media references.
     const details = await Promise.allSettled(properties.map(p=>read(`${DATA}/properties/${encodeURIComponent(p.slug)}.json`)));
     properties = properties.map((p,i)=>details[i].status === 'fulfilled' ? {...p,...details[i].value} : p);
-    await Promise.allSettled(properties.map(p=>loadPropertyMedia(p.clip)));
     list.innerHTML = properties.length ? properties.map(p=>`<article class="vt-property">
-      <a class="vt-cover" href="p.html?id=${encodeURIComponent(p.slug)}" aria-label="Ver ${esc(p.titulo || p.slug)}">${propertyCover(p, mediaByClip.get(p.clip)) ? `<img src="${propertyCover(p, mediaByClip.get(p.clip))}" alt="Vista aérea de ${esc(p.titulo)}" loading="eager">` : '<span>Portada pendiente</span>'}</a>
+      <a class="vt-cover" href="p.html?id=${encodeURIComponent(p.slug)}" aria-label="Ver ${esc(p.titulo || p.slug)}">${propertyCover(p) ? `<img src="${propertyCover(p)}" alt="Vista aérea de ${esc(p.titulo)}" loading="eager">` : '<span>Portada pendiente</span>'}</a>
       <div class="vt-property-info"><div><p class="vt-location">${esc(p.ubicacion || 'Ubicación pendiente')}</p><h2><a href="p.html?id=${encodeURIComponent(p.slug)}">${esc(p.titulo || p.slug)}</a></h2><p class="vt-price">${esc(p.precio || 'Precio por definir')}</p></div><div class="vt-property-actions"><a class="ui-button ui-button--secondary" href="p.html?id=${encodeURIComponent(p.slug)}">Ver propiedad</a><button class="ui-button ui-button--secondary" data-edit="${esc(p.slug)}">Editar</button></div></div></article>`).join('') : `<div class="ui-empty"><h2>Tu primera propiedad empieza con un vuelo</h2><p>Añade sus datos y elige una vista aérea de tu archivo.</p><button class="ui-button ui-button--secondary" id="vt-empty-new">Nueva propiedad</button><small>Por ejemplo, una casa campestre en Cajicá.</small></div>`;
     list.querySelector('#vt-empty-new')?.addEventListener('click', e=>openEditor({},e.currentTarget));
   } catch { list.innerHTML = '<div class="ui-empty"><p>No se pudieron cargar las propiedades.</p><button class="ui-button ui-button--secondary" id="vt-retry">Reintentar</button></div>'; list.querySelector('button').onclick=loadList; }

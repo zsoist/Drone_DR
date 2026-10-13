@@ -115,6 +115,7 @@ The recovery escape `AEROBRAIN_SKIP_WORLD_GATE=1` is explicit. After you use it,
 - Even so, every batch of edits in `web/` must end with `python3 pipeline/bump_web_version.py`.
 - The script raises `?v=N` in html, js and vendor files, refreshes the explicit references to assets and regenerates the `.gz` files.
 - Vendored libraries cache for 24 h.
+- Before you deploy web changes, run `python3 pipeline/page_load_gate.py` (desktop) and `--viewport phone`. The gate loads every app page and fails on any JS error. If a module export is not there, the page stays blank and the server shows no error (Ventas, 2026-10-13).
 - If you edit modules without a bump, the browser and the edge mix old and new modules. Example: the Safari incident of 2026-07-12 (`terrain.splatMask` undefined).
 - `var(--x)` does NOT resolve in SVG presentation ATTRIBUTES in WebKit. `fill="var(--x)"` becomes black on iPhone and iPad. ALWAYS set the colors of inline SVG through a CSS class, so that themes work.
 
