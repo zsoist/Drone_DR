@@ -24,6 +24,8 @@ current contract.
 | [Roadmap](../ROADMAP.md) | current | Shipped scope and outstanding acceptance work |
 | [STE style guide](STE_STYLE_GUIDE.md) | current | Rules for Simplified Technical English (STE) in English docs, with the linter `pipeline/ste_lint.py` |
 | [Redesign plan, October 2026](REDESIGN_2026_10.md) | current | Full redesign: design decisions, anti-patterns, worktree process, workstreams and success criteria |
+| [Design system](DESIGN_SYSTEM.md) | current | Tokens, fonts, page grids, shell navigation, palette, sheets, toasts and motion rules for all pages |
+| [Visual AI features](AI_FEATURES.md) | current | Clip insight schema, search, collections and summary APIs, costs and the backfill procedure |
 
 ## Design system
 
