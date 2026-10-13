@@ -14,11 +14,12 @@ SMOKE_PYTHON="${AEROBRAIN_PYTHON:-/Volumes/SSD/_system/venv/bin/python3}"
 if [[ ! -x "$SMOKE_PYTHON" ]]; then
   SMOKE_PYTHON="$(command -v python3)"
 fi
-"$SMOKE_PYTHON" pipeline/test_smoke.py > /tmp/aerobrain-smoke-precommit.log 2>&1
+SMOKE_LOG="${TMPDIR:-/Volumes/SSD/tmp/agents/aerobrain}/aerobrain-smoke-precommit.log"
+"$SMOKE_PYTHON" pipeline/test_smoke.py > "$SMOKE_LOG" 2>&1
 rc=$?
 if [[ $rc -ne 0 ]]; then
   echo "❌ pre-commit: smoke FALLÓ (exit $rc) — commit bloqueado" >&2
-  tail -8 /tmp/aerobrain-smoke-precommit.log >&2
+  tail -8 "$SMOKE_LOG" >&2
   exit $rc
 fi
 echo "✅ pre-commit: smoke verde" >&2

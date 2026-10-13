@@ -38,9 +38,9 @@ function emptyState(ic, title, text, retry) {
   }
   document.title = `${(p.titulo || '').replace(/[<>]/g, '')} — en venta`;
   const video = p.video ? (p.video.endsWith('.mp4') ? `data/reels/${p.video}` : `data/proxies/${p.video}.mp4`) : null;
-  const poster = p.clip ? `data/thumbs/${p.clip}.jpg` : '';
-  const frames = p.clip ? Array.from({ length: Math.min(p.gallery_n || 8, 12) }, (_, i) =>
-    `data/frames/${p.clip}/f_${String(i * 3 + 2).padStart(4, '0')}.jpg`) : [];
+  const poster = p.cover?.quality?.status === 'ok' ? p.cover.frame_url : '';
+  const frames = (p.gallery || []).filter(frame => frame.quality?.status === 'ok')
+    .map(frame => frame.frame_url);
   const specs = [
     [p.area, 'm²'], [p.habitaciones, 'habitaciones'], [p.banos, 'baños'],
     [p.parqueaderos, 'parqueaderos'], [p.estrato, 'estrato'],

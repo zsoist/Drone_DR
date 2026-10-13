@@ -14,12 +14,13 @@ from fsutil import atomic_write_json
 from keys import load_keys
 from paths import VAULT
 try:
-    from . import router, cover_quality
+    from . import router, cover_quality, highlight_peaks
     from .insight_schema import (INSIGHT_SCHEMA, PRAISE, validate_insight, neutral_caption,
                                  trim_caption, valid_short, normalize_tags, repair_short)
 except ImportError:
     import router
     import cover_quality
+    import highlight_peaks
     from insight_schema import (INSIGHT_SCHEMA, PRAISE, validate_insight, neutral_caption,
                                 trim_caption, valid_short, normalize_tags, repair_short)
 
@@ -157,6 +158,10 @@ def build_record(cid, keys, vault=VAULT):
               'highlights': segment_highlights(insight),
               'best_thumbnail_t': insight['best_frame_times'][0],
               'travel_score': round(max((s['score'] for s in segments), default=0) * 10, 1)}
+    evidence = highlight_peaks.derive(result, vault)
+    result['highlight_evidence'] = evidence
+    result['highlights'] = segment_highlights({**insight, 'highlight_segments': evidence['segments']})
+    result['synthetic'] = not bool(result['highlights'])
     return result
 
 
@@ -219,20 +224,38 @@ def save_record(data, vault=VAULT):
 def segment_highlights(insight):
     return [{'t': s['start'], 'time_s': s['start'], 'label': s['reason'],
              'start': s['start'], 'end': s['end'], 'score': s['score'],
-             'reason': s['reason'], 'type': insight['shot_type'], 'synthetic': False}
-            for s in insight.get('highlight_segments', [])]
+             'reason': s['reason'], 'type': insight['shot_type'], 'synthetic': False,
+             **({'evidence': s['evidence']} if 'evidence' in s else {})}
+            for s in insight.get('highlight_segments', [])
+            if s.get('evidence', {}).get('method') == 'keyframe_difference']
+
+
+def evidence_record(data, vault):
+    """Do not present provider sampling intervals as measured highlight peaks."""
+    if not data.get('insight'):
+        return data
+    evidence = highlight_peaks.derive(data, vault)
+    return {**data, 'highlight_evidence': evidence,
+            'frame_rejection_reasons': cover_quality.evidence_reasons(data),
+            'insight': {**data['insight'], 'highlight_segments': evidence['segments']}}
 
 
 def public_record(cid, vault=VAULT):
     """Adapt stored evidence for legacy clients without making writes or provider calls."""
-    data = record(cid, vault)
+    data = evidence_record(record(cid, vault), vault)
     if not data:
-        return data
+        return {'clip_id': cid, 'highlights': [], 'owner_highlights': [], 'synthetic': True, 'cover': None}
     insight = data.get('insight', {})
     manual = [h for key in ('owner_highlights', 'highlights')
               for h in (data[key] if isinstance(data.get(key), list) else [])
               if isinstance(h, dict) and h.get('type') == 'manual']
+    try:
+        summary = get_summary('flight', cid, vault)['summary']
+    except KeyError:
+        summary = ' '.join(data.get('summary', '').split()).rstrip('.!?')
+        summary = summary + '.' if summary else ''
     return {**data, 'tags': insight.get('tags', data.get('tags', [])),
+            'summary': summary,
             'caption_short': insight.get('caption_short') or trim_caption(data.get('summary', '')),
             'highlights': segment_highlights(insight), 'owner_highlights': manual,
             'synthetic': not bool(insight.get('highlight_segments')),
@@ -244,8 +267,10 @@ def get_insight(cid, vault=VAULT):
     try:
         validate_insight(data['insight'], data['duration_s'], data['sampled_frame_times'])
     except (KeyError, TypeError, ValueError):
-        return {'clip_id': cid, 'status': 'pending', 'suggested': True, 'insight': None}
+        return {'clip_id': cid, 'status': 'pending', 'suggested': True, 'insight': None, 'synthetic': True}
+    data = evidence_record(data, vault)
     return {'clip_id': cid, 'status': 'ready', 'suggested': True, 'insight': data['insight'],
+            'synthetic': not bool(data['insight']['highlight_segments']),
             'cover': next(cover_candidates([cid], {cid: data}, vault), None)}
 
 
@@ -263,7 +288,8 @@ def moment(cid, data, query='', vault=VAULT, *, highlight=False):
     selected = max(segments, key=lambda s: (len(tokens(query) & tokens(s['reason'])), s['score'],
                                           s['start'] >= 1, -s['start']), default=None)
     best_times = insight.get('best_frame_times') or [data.get('best_thumbnail_t', 0)]
-    t = selected['start'] if selected and (query or highlight) else best_times[0]
+    t = (selected.get('evidence', {}).get('peak_time_s', selected['start'])
+         if selected and (query or highlight) else best_times[0])
     if selected and (query or highlight) and t == 0:
         t = next((time for time in best_times if 1 <= time < selected['end']), 0)
     available = []
@@ -271,12 +297,16 @@ def moment(cid, data, query='', vault=VAULT, *, highlight=False):
         if re.fullmatch(r'f_\d+', p.stem):
             available.append(((int(p.stem[2:]) - 1) * 2, p.name))
     frame_time, name = min(available, key=lambda row: abs(row[0] - t)) if available else (None, None)
-    return {'clip_id': cid, 'time_s': t, 'frame_time_s': frame_time,
+    frame = {'clip_id': cid, 'time_s': t, 'frame_time_s': frame_time,
             'frame_url': f'/data/frames/{cid}/{name}' if name else f'/data/thumbs/{cid}.jpg',
             'label': selected['reason'] if selected else insight.get('caption_short', ''),
             'score': selected['score'] if selected else (data.get('travel_score') or 0) / 10,
             'selection': 'ai' if insight or data.get('travel_score') else 'sample',
             'synthetic': not bool(selected) if highlight or query else not bool(insight)}
+    frame['quality'] = cover_quality.assess(data, frame, vault)
+    if not frame['quality']['eligible']:
+        frame['frame_url'] = None
+    return frame
 
 
 _QUERY_CACHE = OrderedDict()
@@ -298,7 +328,7 @@ def search(q, limit=12, vault=VAULT, embed=None):
     q = q.strip()
     if not q or len(q) > 400 or not 1 <= limit <= 50:
         raise ValueError('q must contain 1–400 characters; limit must be 1–50')
-    rows = [(f, record(f['clip_id'], vault)) for f in flights(vault)]
+    rows = [(f, evidence_record(record(f['clip_id'], vault), vault)) for f in flights(vault)]
     vec = None
     if any(d.get('embedding') for _, d in rows):
         try:
@@ -325,10 +355,13 @@ def search(q, limit=12, vault=VAULT, embed=None):
             except (KeyError, ValueError):
                 pass
         if score > 0:
+            matched = moment(f['clip_id'], data, q, vault)
+            if not matched['quality']['eligible']:
+                continue
             results.append({'clip_id': f['clip_id'], 'score': round(score, 6), 'mode': mode,
                             'caption': caption, 'caption_short': ins.get('caption_short') or trim_caption(caption),
                             'tags': tags,
-                            'matched_moment': moment(f['clip_id'], data, q, vault)})
+                            'matched_moment': matched})
     results.sort(key=lambda r: (-r['score'], r['clip_id']))
     return {'q': q, 'mode': 'hybrid' if vec else 'tags', 'results': results[:limit]}
 
@@ -516,6 +549,38 @@ def collections(vault=VAULT, all_items=False):
     return {'collections': result}
 
 
+def distinct_frames(frames, limit=6):
+    frames = list(frames)
+    seen, first, remaining = set(), [], []
+    for frame in frames:
+        if frame['clip_id'] in seen:
+            remaining.append(frame)
+        else:
+            first.append(frame)
+            seen.add(frame['clip_id'])
+    selected = []
+    for frame in first + remaining:
+        if not frame.get('quality', {}).get('eligible'):
+            continue
+        if any(frame['clip_id'] == other['clip_id']
+               and abs(frame['frame_time_s'] - other['frame_time_s']) < 20 for other in selected):
+            continue
+        selected.append(frame)
+        if len(selected) == limit:
+            break
+    return selected
+
+
+def property_media(prop, vault=VAULT):
+    """Only linked clips can supply a property gallery. Recheck stored selections."""
+    linked = prop.get('clips') if isinstance(prop.get('clips'), list) else []
+    ids = list(dict.fromkeys(cid for cid in [prop.get('clip'), *linked] if valid_id(cid)))
+    records = {cid: record(cid, vault) for cid in ids}
+    gallery = distinct_frames(cover_candidates(ids, records, vault))
+    return {**prop, 'gallery': gallery, 'gallery_n': len(gallery),
+            'cover': gallery[0] if gallery else None}
+
+
 def summary_source(kind, identity, vault=VAULT):
     rows = flights(vault)
     groups = trip_groups(rows)
@@ -532,11 +597,13 @@ def summary_source(kind, identity, vault=VAULT):
     moments, routes, evidence, highlights, segments = [], [], [], [], []
     for f in rows:
         cid = f['clip_id']
-        data = record(cid, vault)
+        data = evidence_record(record(cid, vault), vault)
         insight = data.get('insight', {})
         segments.extend({'clip_id': cid, **h} for h in segment_highlights(insight))
         if insight.get('highlight_segments'):
-            highlights.append(moment(cid, data, vault=vault, highlight=True))
+            frame = moment(cid, data, vault=vault, highlight=True)
+            if frame['quality']['eligible']:
+                highlights.append(frame)
         moments.extend(cover_candidates([cid], {cid: data}, vault))
         track = read(vault / 'tracks' / f'{cid}.flight.json', {})
         line = [[p['lon'], p['lat']] for p in track.get('points', [])[::4]
@@ -556,10 +623,10 @@ def summary_source(kind, identity, vault=VAULT):
               'clip_ids': [f['clip_id'] for f in rows],
               'distance_m': round(sum(distance), 1) if distance else None,
               'max_altitude_m': max(alt) if alt else None,
-              'highlights': segments, 'cover': unique[0] if unique else None,
+              'highlights': segments, 'synthetic': not bool(segments), 'cover': unique[0] if unique else None,
               'best_moment': max(highlights, key=lambda m: (m['score'], m['time_s'] >= 1), default=None)}
     if kind == 'trip':
-        result.update(route=routes, best_frames=unique[:6])
+        result.update(route=routes, best_frames=distinct_frames(unique))
     return result, {'version': 3, 'data': result, 'place': place,
                     'distance': format_distance(result['distance_m']), 'evidence': evidence}
 
@@ -582,6 +649,8 @@ def safe_summary_text(text, source):
 
 def valid_summary(text, source):
     if not isinstance(text, str) or not safe_summary_text(text, source):
+        return False
+    if re.search(r'\bse observa[n]?\b', text, re.I):
         return False
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     if len(sentences) != 2 or any(not s.endswith('.') or not 2 <= len(s.split()) <= 28 for s in sentences):
@@ -638,7 +707,7 @@ def get_summary(kind, identity, vault=VAULT):
     cached = read(summary_path(kind, identity, vault), {})
     ready = cached.get('summary_hash', cached.get('source_hash')) == digest(source) and valid_summary(cached.get('summary'), source)
     return {**result, 'status': 'ready' if ready else 'pending',
-            'summary': cached['summary'] if ready else None}
+            'summary': cached['summary'] if ready else template_summary(source)}
 
 
 def cache_summary(kind, identity, keys, vault=VAULT, *, deterministic=False):

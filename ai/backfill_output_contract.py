@@ -29,6 +29,9 @@ def backfill(limit, property_ids, backup, dry_run=False, vault=insights.VAULT, k
         target = vault / 'ai' / f'{cid}.json'
         raw = insights.read(target, {})
         data = insights.public_record(cid, vault)
+        # Keep provider evidence separate from derived public highlight intervals.
+        if raw.get('insight'):
+            data['insight'] = insights.record(cid, vault).get('insight', {})
         if raw and raw != stored_shape(data):
             selected.append((cid, target, raw, data))
     selected = selected[:limit]

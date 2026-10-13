@@ -56,11 +56,14 @@ class GateLifecycle(unittest.TestCase):
         self._deadline = bg.STARTUP_DEADLINE_S
         self._ssd_tmp = bg.SSD_TMP
         bg.SSD_TMP = self.root            # private lock + profiles: real gates may hold the Mac slot
+        self._resources_ok = bg._resources_ok
+        bg._resources_ok = lambda: (True, 'mock resources for fake Chrome')
 
     def tearDown(self):
         bg.SSD_TMP = self._ssd_tmp
         bg.CHROME = self._chrome
         bg.STARTUP_DEADLINE_S = self._deadline
+        bg._resources_ok = self._resources_ok
         bg._cleanup_all()
         self.tmp.cleanup()
 
@@ -196,9 +199,12 @@ class BrowserSlotTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self._ssd_tmp = bg.SSD_TMP
         bg.SSD_TMP = Path(self.tmp.name)  # private lock: real gates may hold the Mac slot
+        self._resources_ok = bg._resources_ok
+        bg._resources_ok = lambda: (True, 'mock resources for lock test')
 
     def tearDown(self):
         bg.SSD_TMP = self._ssd_tmp
+        bg._resources_ok = self._resources_ok
         self.tmp.cleanup()
 
     def test_profile_holds_and_releases_the_slot(self):
@@ -219,7 +225,8 @@ class BrowserSlotTests(unittest.TestCase):
 
     def test_second_process_waits_for_the_slot(self):
         p = bg._Profile()
-        code = ("import time, browser_gate as bg; t=time.time(); q=bg._Profile(); "
+        code = ("import time, browser_gate as bg; bg._resources_ok=lambda:(True, 'mock'); "
+                "t=time.time(); q=bg._Profile(); "
                 "print(round(time.time()-t,1)); q.cleanup()")
         env = dict(os.environ, AEROBRAIN_BROWSER_TMP=self.tmp.name)
         child = subprocess.Popen([sys.executable, "-c", code], cwd=Path(__file__).parent,

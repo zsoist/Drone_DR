@@ -23,7 +23,7 @@ def evidence_reasons(data):
              *[s.get('reason', '') for s in ins.get('highlight_segments', [])]]
     text = ' '.join(p for p in parts if isinstance(p, str))
     text = ''.join(c for c in unicodedata.normalize('NFKD', text.lower()) if not unicodedata.combining(c))
-    reasons = []
+    reasons = list(data.get('frame_rejection_reasons', []))
     if not text.strip():
         reasons.append('missing_evidence')
     if TEXT.search(text):
@@ -32,7 +32,7 @@ def evidence_reasons(data):
         reasons.append('person')
     if ins.get('quality_flags'):
         reasons.append('quality_flag')
-    return reasons
+    return list(dict.fromkeys(reasons))
 
 
 @lru_cache(maxsize=4096)
@@ -48,17 +48,17 @@ def _luminance(path, mtime_ns, size):
 
 def assess(data, frame, vault):
     reasons = evidence_reasons(data)
-    url = frame.get('frame_url', '')
+    url = frame.get('frame_url') or ''
     cid = frame['clip_id']
     prefix = f'/data/frames/{cid}/'
     name = url.removeprefix(prefix)
     path = Path(vault) / 'frames' / cid / name
     if not url.startswith(prefix) or not re.fullmatch(r'f_\d+\.jpg', name):
-        return {'eligible': False, 'reasons': reasons + ['missing_frame'], 'mean_luminance': None}
+        return result(reasons + ['missing_frame'])
     try:
         stat = path.stat()
     except OSError:
-        return {'eligible': False, 'reasons': reasons + ['missing_frame'], 'mean_luminance': None}
+        return result(reasons + ['missing_frame'])
     # Only frame-specific brightness is valid here; a clip average can hide a dark cover.
     stored = data.get('frame_luminance', {}).get(name)
     if (isinstance(stored, dict) and stored.get('mtime_ns') == stat.st_mtime_ns
@@ -72,4 +72,9 @@ def assess(data, frame, vault):
         reasons.append('unreadable_frame')
     elif luma < MIN_LUMINANCE:
         reasons.append('dark_frame')
-    return {'eligible': not reasons, 'reasons': reasons, 'mean_luminance': luma}
+    return result(reasons, luma)
+
+
+def result(reasons, luma=None):
+    return {'status': 'rejected' if reasons else 'ok', 'reason': reasons[0] if reasons else None,
+            'eligible': not reasons, 'reasons': reasons, 'mean_luminance': luma}
