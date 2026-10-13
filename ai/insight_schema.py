@@ -68,20 +68,43 @@ def trim_caption(value):
 
 def valid_short(value):
     return (isinstance(value, str) and value == value.strip()
-            and 1 <= len(value) <= 60 and not PRAISE.search(value)
+            and 4 <= len(value.split()) <= 9 and len(value) <= 100 and not PRAISE.search(value)
             and not CAPTION_PREFIX.search(value) and not DANGLING.search(value)
             and not value.endswith(('…', '...'))
             and '\n' not in value and '\r' not in value)
 
 
 def repair_short(value, subjects):
-    """Use a known subject when the supplied short phrase fails the contract."""
+    """Keep observed context from the full caption instead of a bare subject."""
+    if isinstance(value, str):
+        value = value.strip(' .;,:!?…')
     if valid_short(value):
         return value
+    text = CAPTION_PREFIX.sub('', neutral_caption(value if isinstance(value, str) else ''))
+    # Prefer a clause that starts with an observed subject, skipping camera narration.
+    candidates = []
     for subject in subjects:
-        if isinstance(subject, str) and valid_short(subject):
-            return subject[:1].upper() + subject[1:]
-    return trim_caption(value if isinstance(value, str) else '')
+        if isinstance(subject, str) and subject:
+            match = re.search(r'\b' + re.escape(subject) + r'\b', text, re.I)
+            if match:
+                candidates.append(text[match.start():])
+    candidates.append(text)
+    for candidate in candidates:
+        phrase = re.split(r'[.!?;]\s', candidate, maxsplit=1)[0]
+        words = phrase.split()[:9]
+        while words:
+            short = ' '.join(words).strip(' .;,:!?…')
+            short = short[:1].upper() + short[1:]
+            if valid_short(short):
+                return short
+            words.pop()
+    # Sparse legacy evidence cannot support invented surroundings or light.
+    for subject in subjects:
+        if isinstance(subject, str):
+            short = f'{neutral_caption(subject).capitalize()} durante el vuelo'
+            if valid_short(short):
+                return short
+    return 'Escena registrada durante el vuelo'
 
 LOOKS = ['none', 'nolan', 'deakins', 'malick', 'fincher', 'kodak', 'goldenhour',
          'tealorange', 'cine', 'vivid', 'warm', 'moody', 'bw']
@@ -104,7 +127,7 @@ def array(item, minimum=0, maximum=20):
 
 TIME = {'type': 'number', 'minimum': 0, 'maximum': 86400}
 INSIGHT_SCHEMA = obj({
-    'caption': text(), 'caption_short': text(60),
+    'caption': text(), 'caption_short': text(100),
     'tags': array(text(80)), 'subjects': array(text(100)),
     'shot_type': {'type': 'string', 'enum': SHOTS},
     'scene_type': {'type': 'string', 'enum': ['urbano', 'naturaleza', 'costa', 'montaña',
@@ -149,7 +172,7 @@ def validate(value, schema=INSIGHT_SCHEMA, path='$'):
 def validate_insight(value, duration, frame_times):
     validate(value)
     if not valid_short(value['caption_short']):
-        raise ValueError('caption_short must be neutral and at most 60 characters')
+        raise ValueError('caption_short must contain 4–9 neutral words and at most 100 characters')
     if any(t not in frame_times or t > duration for t in value['best_frame_times']):
         raise ValueError('best frames must be sampled frames inside the clip')
     for segment in value['highlight_segments']:

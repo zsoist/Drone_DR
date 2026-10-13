@@ -3962,7 +3962,7 @@ class H(BaseHTTPRequestHandler):
                     if data:
                         flight['ai'] = {k: data.get(k) for k in (
                             'summary', 'caption_short', 'scene_type', 'tags', 'highlights',
-                            'travel_score', 'synthetic', 'owner_highlights')}
+                            'travel_score', 'synthetic', 'owner_highlights', 'cover')}
             return self.send_json(payload)
         if f.suffix.lower() == ".html" and str(f).startswith(str(WEB)):
             payload = render_html(f)
@@ -4463,8 +4463,8 @@ class H(BaseHTTPRequestHandler):
         if not pf.exists():
             return self.send_json({"error": "propiedad no existe"}, 404)
         p = read_json_file(pf)
-        from ai.property_copy import generate
-        p["descripcion"] = generate(p, _deepseek)
+        from ai.property_copy import generate, visual_evidence
+        p["descripcion"] = generate(p, _deepseek, visual_evidence(p, VAULT))
         p['descripcion_source'] = 'ai'
         atomic_write_json(pf, p, indent=1, ensure_ascii=False)
         return self.send_json({"ok": True, "descripcion": p["descripcion"]})

@@ -132,8 +132,8 @@ def summary_text(payload, keys):
 
 
 def short_caption(caption, keys):
-    prompt = ('Reduce la descripción a una línea concreta en español, hasta 60 caracteres. '
-              'Conserva el sujeto y la acción visibles. No inventes lugares. '
+    prompt = ('Reduce la descripción a una línea concreta en español, de 4 a 9 palabras y hasta 100 caracteres. '
+              'Conserva el sujeto concreto y su entorno o luz visibles. No inventes lugares. '
               'Escribe una frase completa, sin cortar al final. Empieza por el sujeto, nunca por '
               'Dron muestra, Dron ni Vista aérea de. '
               'No uses elogios como excelente, impresionante, majestuoso, espectacular o hermoso. '
