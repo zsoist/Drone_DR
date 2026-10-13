@@ -109,11 +109,68 @@ test('collection membership and exact AI filters intersect the library', () => {
   assert.equal(context.matches({ clip_id: 'inside' }), false);
 });
 
-test('legacy fixed windows do not appear as observed flight moments', async () => {
+test('explicit synthetic moments stay hidden without rejecting valid timestamps', async () => {
   const { credibleHighlights } = await import('./home.ai.js');
-  const legacy = { highlight_segments: [0, 90, 180, 270].map(start => ({ start, end: start + 46, score: .8 })) };
+  const legacy = { highlight_segments: [0, 90, 180, 270].map(start => ({ start, end: start + 46, score: .8, synthetic: true })) };
   assert.deepEqual(credibleHighlights(legacy), []);
   const observed = { start: 17, end: 26, score: .8, reason: 'Un vehículo cruza la calle.' };
-  assert.deepEqual(credibleHighlights({ highlight_segments: [{ start: 0, end: 8 }, observed] }), [observed]);
+  const opening = { start: 0, end: 8 };
+  assert.deepEqual(credibleHighlights({ highlight_segments: [opening, observed] }), [opening, observed]);
   assert.deepEqual(credibleHighlights(null), []);
+});
+
+function aiSelectionContext(extra = {}) {
+  const source = fs.readFileSync(new URL('./home.ai.js', import.meta.url), 'utf8')
+    .replace(/^import .*;\n/gm, '').replaceAll('export ', '');
+  const context = vm.createContext({ ...extra });
+  vm.runInContext(source, context);
+  return context;
+}
+
+test('real highlights include zero and regular intervals; invalid or synthetic segments do not', () => {
+  const context = aiSelectionContext();
+  const real = [0, 90, 180, 270].map(start => ({ start, end: start + 46, score: .8 }));
+  const result = context.credibleHighlights({ highlight_segments: [...real,
+    { start: 1, end: 3, synthetic: true }, { start: -1, end: 3 }, { start: 5, end: 5 }] });
+  assert.deepEqual(Array.from(result, h => h.start), [0, 90, 180, 270]);
+});
+
+test('cover selection excludes people and signs, including evidence outside the short caption', () => {
+  const context = aiSelectionContext();
+  for (const caption of ['Un hombre camina en una azotea.', 'Un cartel con texto y teléfonos.', 'Dos personas junto al río.', 'Un lote en venta en una zona rural.']) {
+    assert.equal(context.coverEligible({ caption_short: 'Paisaje urbano', caption }), false);
+  }
+  assert.equal(context.coverEligible({ caption: 'Edificios con tejados verdes y montañas.' }), true);
+  assert.equal(context.coverEligible(null), false);
+});
+
+test('best cover chooses the brightest usable sample and respects excluded covers', async () => {
+  let pixels;
+  const values = { 'frame-0': 20, 'frame-2': 120, 'frame-4': 180, 'frame-6': 255 };
+  const context = aiSelectionContext({
+    frameFor: (_, t) => `frame-${t}`,
+    Image: class { set src(url) { this.luma = values[url]; this.onload(); } },
+    document: { createElement: () => ({ getContext: () => ({
+      drawImage: img => { pixels = new Uint8ClampedArray(48 * 32 * 4).fill(img.luma); },
+      getImageData: () => ({ data: pixels }),
+    }) }) },
+  });
+  const flight = { frame_count: 5, duration_s: 10 };
+  const insight = { caption: 'Edificios y montañas.', best_frame_times: [0, 2, 4, 6] };
+  assert.equal((await context.bestCover(flight, insight)).time, 4);
+  assert.equal((await context.bestCover(flight, insight, { exclude: new Set(['frame-4']) })).time, 2);
+  assert.equal(await context.bestCover(flight, { ...insight, best_frame_times: [0, 6] }), null);
+});
+
+test('filmstrip keeps ten navigable frames across the complete flight', () => {
+  const source = fs.readFileSync(new URL('./flight.js', import.meta.url), 'utf8');
+  const strip = { innerHTML: '', addEventListener() {} };
+  const context = vm.createContext({ meta: { frame_count: 159 }, cid: 'sample', DATA: '/data', fmt: { dur: String }, document: { getElementById: () => strip } });
+  const start = source.indexOf('  if (meta.frame_count) {', source.indexOf('// ---- filmstrip'));
+  vm.runInContext(source.slice(start, source.indexOf('// ---- charts', start)), context);
+  const times = [...strip.innerHTML.matchAll(/data-t="(\d+)"/g)].map(match => Number(match[1]));
+  assert.equal(times.length, 10);
+  assert.equal(times[0], 0);
+  assert.equal(times.at(-1), 316);
+  assert.equal(new Set(times).size, 10);
 });

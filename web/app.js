@@ -1,8 +1,8 @@
-import { fmt } from './ui/format.js?v=415';
-import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=415';
-import { skinPlayer } from './ui/player.js?v=415';
-import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=415';
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=415';
+import { fmt } from './ui/format.js?v=418';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=418';
+import { skinPlayer } from './ui/player.js?v=418';
+import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=418';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=418';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 // The clip library belongs to Viajes, including collection and tag links.
@@ -303,7 +303,7 @@ function renderDates(list) {
     const dur = fs.reduce((a, f) => a + f.duration_s, 0);
     return `<div class="month-head vf-span">
       <b>${esc(name.charAt(0).toUpperCase() + name.slice(1))}</b>
-      <span>${fs.length} vuelos · <span class="mono">${fmt.km(dist)} · ${fmt.hours(dur)}</span></span></div>` +
+      <span>${fs.length} vuelos · ${fmt.km(dist)} · ${fmt.hours(dur)}</span></div>` +
       fs.map(card).join('');
   }).join('') : noResults('cal', 'Sin vuelos', 'Todavía no hay vuelos para agrupar por fecha.');
   grid.classList.toggle('is-empty', !months.length);
