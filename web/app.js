@@ -1,5 +1,8 @@
-import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=402';
-import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor } from './home-shared.js?v=402';
+import { fmt } from './ui/format.js?v=407';
+import { mapSkinOptions, skinMap } from './ui/map-skin.js?v=407';
+import { skinPlayer } from './ui/player.js?v=407';
+import { readAI, loadInsights, captionView, clipChips, qualityLabels } from './home.ai.js?v=407';
+import { loadFlights, registerFlights, openPageSheet, save, skeleton, dataColor, suggestedContent } from './home-shared.js?v=407';
 // Vuelos: gallery with instant search (incl. AI tags), filters, sort, views.
 const main = renderShell('index.html');
 // The clip library belongs to Viajes, including collection and tag links.
@@ -35,11 +38,7 @@ main.innerHTML = `
           <option value="score">Mejor puntuación</option>
         </select></div>
         <div class="vf-fld"><span class="tool-lb vf-lb">Explorar por</span>
-        <div class="seg vf-explore ui-segmented" role="group" aria-label="Explorar por">
-          <button data-view="map" data-tip="Rutas en el mapa" aria-label="Explorar en el mapa">${icon('map')}<span class="seg-lb">Mapa</span></button>
-          <button data-view="places" data-tip="Agrupados por lugar de despegue" aria-label="Agrupar por lugares">${icon('pin')}<span class="seg-lb">Lugares</span></button>
-          <button data-view="dates" data-tip="Agrupados por fecha" aria-label="Agrupar por fechas">${icon('cal')}<span class="seg-lb">Fechas</span></button>
-        </div></div>
+        <select class="ctl" id="vf-group" aria-label="Agrupar vuelos"><option value="grid">Sin agrupar</option><option value="places">Lugares</option><option value="dates">Fechas</option></select></div>
       </div>
       <div class="vf-fld vf-fld-chips"><span class="tool-lb vf-lb">Filtrar</span>
       <div class="chip-row vf-chips" role="toolbar" aria-label="Filtros">
@@ -408,11 +407,11 @@ function renderMap(list) {
     // sin ningún bbox, un LngLatBounds vacío hace throw en el constructor y en fitBounds (#2):
     // arranca el mapa centrado por defecto y no intenta encuadrar la nada
     const hasBounds = withBox.length > 0;
-    const opts = { container: 'vmap', style: SAT_STYLE, attributionControl: { compact: true } };
+    const opts = { ...mapSkinOptions, container: 'vmap', style: SAT_STYLE };
     if (hasBounds) { opts.bounds = bounds; opts.fitBoundsOptions = { padding: 84 }; }
     else { opts.center = [-74.08, 4.65]; opts.zoom = 9; }   // Bogotá por defecto
     vmap = new maplibregl.Map(opts);
-    vmap.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    skinMap(vmap);
     new ResizeObserver(() => vmap.resize()).observe(document.getElementById('vmap'));
     document.getElementById('vm-fit').addEventListener('click', () => {
       state.spot = null;
@@ -478,7 +477,7 @@ function openPreview(f) {
       <button class="modal-x" aria-label="Cerrar">${icon('close')}</button></div>
     <div class="modal-b">
       ${f.has_proxy
-        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" controls muted playsinline preload="metadata"></video>`
+        ? `<video class="m-prev vf-prev" src="${DATA}/proxies/${esc(f.clip_id)}.mp4" poster="${DATA}/thumbs/${esc(f.clip_id)}.jpg" muted playsinline preload="metadata"></video>`
         : `<img class="vf-prev-img" src="${DATA}/thumbs/${esc(f.clip_id)}.jpg" alt="Miniatura de ${esc(flightTitle(f, a))}" width="960" height="540">`}
       <div class="tool-row vf-prev-chips">
         <span class="chip ui-chip">${fmt.dur(f.duration_s)}</span>
@@ -486,14 +485,18 @@ function openPreview(f) {
         <span class="chip ui-chip">${fmt.km(f.stats.distance_m || 0)}</span>
         ${models.has(f.clip_id) ? `<span class="chip on ui-chip">3D</span>` : ''}
       </div>
-      ${a?.caption_short ? `<span class="vf-note">Sugerido</span>${captionView(a)}` : '<p class="vf-prev-note">Sin análisis aún.</p>'}
+      ${a?.caption_short ? `<div class="vf-preview-insight">${captionView(a)}</div>` : '<p class="vf-prev-note">Sin análisis aún.</p>'}
       <div class="navrow vf-prev-actions">
         <a class="btn ui-button ui-button--primary" href="flight.html?id=${encodeURIComponent(f.clip_id)}">${icon('film')} Ver vuelo completo</a>
         ${models.has(f.clip_id) ? `<a class="btn ui-button ui-button--secondary" href="tresd.html">${icon('cube')} Modelo 3D</a>` : ''}
       </div>
     </div></div>`;
 
-  openPageSheet(ov, { size: 'full', onClose: () => ov.querySelector('video')?.pause() });
+  const insight = ov.querySelector('.vf-preview-insight');
+  if (insight) insight.replaceChildren(suggestedContent(insight.innerHTML));
+  const video = ov.querySelector('video');
+  const player = video ? skinPlayer(video) : null;
+  openPageSheet(ov, { size: 'full', onClose: () => player?.destroy() });
 }
 
 const qEl = document.getElementById('q');
@@ -569,6 +572,7 @@ document.querySelectorAll('[data-view]').forEach(b =>
     // los modos de "Explorar por" se apagan al pulsarlos otra vez → vuelve a la cuadrícula
     setView(b.closest('.vf-explore') && state.view === v ? 'grid' : v);
   }));
+document.getElementById('vf-group').addEventListener('change', e => setView(e.target.value));
 function setView(v) {
   state.view = v;
   localStorage.setItem('ab.vview', v);
@@ -579,6 +583,7 @@ function setView(v) {
   render();
 }
 function syncViewButtons() {
+  document.getElementById('vf-group').value = ['places', 'dates'].includes(state.view) ? state.view : 'grid';
   document.querySelectorAll('[data-view]').forEach(b => {
     const on = b.dataset.view === state.view;
     b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
@@ -612,7 +617,12 @@ document.addEventListener('keydown', e => {
   const { insights, failed } = await loadInsights(flights.filter(f => !f.archived));
   for (const [id, insight] of Object.entries(insights)) if (insight) ai[id] = { ...ai[id], ...insight };
   const aiStatus = document.getElementById('ai-status');
-  aiStatus.textContent = failed ? 'No se pudieron cargar algunas etiquetas.' : 'Sugerido · Etiquetas y observaciones';
+  aiStatus.textContent = failed ? 'No se pudieron cargar algunas etiquetas.' : '';
+  const suggestions = suggestedContent('');
+  suggestions.classList.add('vf-suggested');
+  aiStatus.hidden = !failed;
+  aiStatus.after(suggestions);
+  suggestions.querySelector('.ui-suggested-content').append(document.getElementById('grid'), document.getElementById('mapview'));
   buildSpots();
   render();                       // un solo pintado inicial (con títulos AI): la entrada se anima una vez
   fetch(`${DATA}/manifest/system.json`).then(r => r.json())

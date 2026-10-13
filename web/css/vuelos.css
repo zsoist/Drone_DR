@@ -104,7 +104,6 @@
 /* W2 layout: visible view switch, progressive filters, quiet media. */
 .vf-page .page-head h1 { font-size:var(--fs-3xl); }
 .vf-view { margin-bottom:var(--sp-5); width:fit-content; }
-.vf-view [aria-pressed=true] { background:var(--surface-3); color:var(--accent-fg); }
 .vf-filters-btn { display:inline-flex; }
 .vf-more { display:none; }
 .vf-more.in-sheet { display:flex; flex-direction:column; gap:var(--sp-5); }
@@ -145,8 +144,6 @@
 .vf-map-pin span { display:grid; place-items:center; width:var(--moment-size); height:var(--moment-size); border-radius:var(--r-pill); background:var(--data); color:var(--bg); font:600 var(--fs-sm)/1 var(--font); box-shadow:var(--shadow-1); }
 .vf-map-pin.on span { background:var(--accent); color:var(--text-on-accent); }
 .vf-page .map-recenter { width:44px; height:44px; top:auto; right:auto; bottom:var(--sp-3); left:var(--sp-3); }
-.vf-page .maplibregl-ctrl button { width:44px; height:44px; }
-.vf-page .maplibregl-ctrl-attrib { font-size:12px; }
 .vf-page .w2-loading { display:contents; }
 .vf-page .w2-loading .ui-skeleton--text { margin-top:var(--sp-3); }
 @media(max-width:820px) {
@@ -166,9 +163,6 @@
 .vf-page .list .vf-card-link { display:flex; align-items:center; flex:1; }
 .vf-page .list .vf-card-tools { margin:0; }
 .vf-page .list .vf-card-tools .ui-chip { display:none; }
-.vf-page .maplibregl-ctrl.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button { width:44px; height:44px; background-repeat:no-repeat; background-position:center; background-color:var(--on-media); border-radius:var(--r-sm); }
-.vf-page .maplibregl-ctrl-attrib.maplibregl-compact { min-height:44px; padding-right:44px; }
-.vf-page .maplibregl-ctrl-attrib a { display:inline-flex; align-items:center; min-height:44px; }
 .w2-sheet .mlb,.w2-sheet .tool-lb { text-transform:none; letter-spacing:0; font-size:var(--fs-sm); }
 
 @media(max-width:599px) { .vf-page .grid:not(.list) { grid-template-columns:1fr; } }
@@ -186,3 +180,4 @@
 .vf-card-tools .ai-clip-chips .ui-chip { max-width:100%; white-space:normal; }
 .vf-page .list .vf-card-tools { grid-column:1 / -1; }
 .vf-page .list .vf-card-tools .ui-chip { display:inline-flex; }
+.vf-suggested .ui-suggested-content { max-width:none; min-width:0; }

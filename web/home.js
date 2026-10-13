@@ -1,9 +1,12 @@
-import { readAI } from './home.ai.js?v=402';
-import { loadFlights, registerFlights, frameFor, skeleton, renderFailure } from './home-shared.js?v=402';
+import { fmt } from './ui/format.js?v=407';
+import { readAI, loadInsights, captionView } from './home.ai.js?v=407';
+import { loadFlights, registerFlights, frameFor, skeleton, renderFailure, figure, suggestedContent } from './home-shared.js?v=407';
 const main = renderShell('home.html');
 main.classList.add('home-page', 'ab-page');
 const flightLink = f => `flight.html?id=${encodeURIComponent(f.clip_id)}`;
-const titleFor = f => f.label || `${fmt.date(f.date)} · ${f.time || 'Vuelo'}`;
+const titleFor = f => f.label || 'Vuelo';
+let collectionRequest;
+const getCollections = () => collectionRequest ||= readAI('/api/collections').catch(error => { collectionRequest = null; throw error; });
 
 async function load() {
   main.innerHTML = `<div aria-busy="true" aria-label="Cargando inicio"><div class="home-heading"><div class="ui-skeleton ui-skeleton--text"></div></div><div class="home-feature"><div class="ui-skeleton ui-skeleton--media home-feature-media" aria-hidden="true"></div><div class="home-feature-copy">${'<div class="ui-skeleton ui-skeleton--text"></div>'.repeat(4)}</div></div><div class="home-section">${skeleton(3)}</div></div>`;
@@ -19,38 +22,40 @@ async function load() {
       return;
     }
     main.innerHTML = `
-      <header class="home-heading"><h1>Inicio</h1><a class="ui-button ui-button--quiet" href="studio.html?via=subir">${icon('plus')} Subir</a></header>
+      <header class="home-heading"><h1>Inicio</h1><nav class="home-quick" aria-label="Acciones rápidas"><a class="ui-button ui-button--quiet" href="trips.html?view=map">${icon('map')} Explorar mapa</a><a class="ui-button ui-button--quiet" href="studio.html">${icon('film')} Crear reel</a><a class="ui-button ui-button--quiet" href="studio.html?via=subir">${icon('plus')} Subir</a></nav></header>
       <section class="home-feature">
         <a class="home-feature-media" href="${flightLink(latest)}" aria-label="Ver último vuelo" data-transition-key="clip-${esc(latest.clip_id)}"><img src="${frameFor(latest, latest.ai?.highlights?.[0]?.t)}" alt="Vista aérea del último vuelo" fetchpriority="high"></a>
-        <div class="home-feature-copy"><p class="home-date">Último vuelo · ${esc(latest.time || '')}</p><h2>${esc(latest.label || fmt.date(latest.date))}</h2><p>Reproduce el recorrido y revisa tus momentos destacados.</p><div class="home-flight-meta"><span>${fmt.dur(latest.duration_s)} en el aire</span><span>${fmt.km(latest.stats?.distance_m || 0)} de recorrido</span></div><a class="ui-button ui-button--primary" href="${flightLink(latest)}">${icon('play')} Ver vuelo</a></div>
+        <div class="home-feature-copy"><p class="home-date">Último vuelo · ${esc(latest.time || '')}</p><h2>${esc(latest.label || fmt.date(latest.date))}</h2><div id="home-summary" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div><div class="home-flight-meta"><span>${figure(fmt.duration(latest.duration_s))} en el aire</span><span>${figure(fmt.distance(latest.stats?.distance_m))} de recorrido</span></div><a class="ui-button ui-button--primary" href="${flightLink(latest)}">${icon('play')} Ver vuelo</a></div>
       </section>
-      <section class="home-section home-collection-section"><div class="home-section-head"><div><h2>Colecciones</h2><span class="w2-note">Sugerido</span></div><a class="ui-button ui-button--quiet" href="trips.html">Ver viajes ${icon('arrowR')}</a></div><div id="home-collections" aria-busy="true">${skeleton(3)}</div></section>
-      <section class="home-section home-recent-section"><div class="home-section-head"><h2>Vuelos recientes</h2><a class="ui-button ui-button--quiet" href="index.html">Ver todos ${icon('arrowR')}</a></div><div class="home-recent">${flights.slice(1, 5).map(f => `<a href="${flightLink(f)}" class="home-recent-item"><img src="${frameFor(f)}" alt="" loading="lazy"><span><strong>${esc(titleFor(f))}</strong><span>${fmt.dur(f.duration_s)} · ${fmt.km(f.stats?.distance_m || 0)}</span></span>${icon('arrowR')}</a>`).join('') || '<p>Tu próximo vuelo aparecerá aquí.</p>'}</div></section>
-      <section class="home-section home-bottom">${events.length ? `<div><h2>Actividad reciente</h2><ul class="home-activity">${events.map(event => `<li><a href="${esc(event.href)}"><strong>${esc(event.text)}</strong><span>${esc(relativeTime(event.finished))}</span></a></li>`).join('')}</ul></div>` : ''}${jobsError ? '<p class="w2-note">No se pudo cargar la actividad. <button class="ui-button ui-button--quiet" id="home-jobs-retry">Reintentar</button></p>' : ''}<nav class="home-quick" aria-label="Acciones rápidas"><a class="ui-button ui-button--secondary" href="index.html?v=map">${icon('map')} Explorar mapa</a><a class="ui-button ui-button--secondary" href="studio.html">${icon('film')} Crear reel</a></nav></section>`;
+      <section class="home-section home-collection-section"><div class="home-section-head"><h2>Colecciones</h2><a class="ui-button ui-button--quiet" href="trips.html">Ver viajes ${icon('arrowR')}</a></div><div id="home-collections" aria-busy="true">${skeleton(3)}</div></section>
+      <section class="home-section home-recent-section"><div class="home-section-head"><h2>Vuelos recientes</h2><a class="ui-button ui-button--quiet" href="index.html">Ver todos ${icon('arrowR')}</a></div><div class="home-recent" id="home-recent">${flights.slice(1, 5).map(f => `<a href="${flightLink(f)}" class="home-recent-item" data-clip="${esc(f.clip_id)}"><img src="${frameFor(f)}" alt="" loading="lazy"><span><strong>${esc(titleFor(f))}</strong><span>${esc(fmt.date(f.date))} · ${esc(f.time || '')} · ${figure(fmt.duration(f.duration_s))}</span></span>${icon('arrowR')}</a>`).join('') || '<p>Tu próximo vuelo aparecerá aquí.</p>'}</div></section>
+      <section class="home-section home-bottom">${events.length ? `<div><h2>Actividad reciente</h2><ul class="home-activity">${events.map(event => `<li><a href="${esc(event.href)}"><strong>${esc(event.text)}</strong><span>${esc(fmt.relative(event.finished * 1000))}</span></a></li>`).join('')}</ul></div>` : ''}${jobsError ? '<p class="w2-note">No se pudo cargar la actividad. <button class="ui-button ui-button--quiet" id="home-jobs-retry">Reintentar</button></p>' : ''}</section>`;
     loadCollections(flights);
+    loadRecent(flights.slice(0, 5));
+    if (!events.length && !jobsError) main.querySelector('.home-bottom').remove();
     document.getElementById('home-jobs-retry')?.addEventListener('click', load);
   } catch { renderFailure(main, load); }
 }
 async function loadCollections(flights) {
   const region = document.getElementById('home-collections');
   try {
-    const { collections } = await readAI('/api/collections');
+    const { collections } = await getCollections();
     const covers = await collectionCovers(collections, flights);
-    region.innerHTML = collections.length ? `<div class="home-collections">${collections.map((c, i) => `<a class="home-collection" href="index.html?collection=${encodeURIComponent(c.id)}&v=list"><img src="${esc(covers[i])}" alt="" loading="lazy"><h3>${esc(c.label)}</h3><p>${esc(c.subtitle)}</p></a>`).join('')}</div>` : '<p class="w2-note">Las colecciones aparecerán cuando haya vuelos analizados.</p>';
+    const kinds = { place: 'Lugares', month: 'Meses', subject: 'Temas', shot_type: 'Tomas' };
+    const grouped = Object.keys(kinds).map(kind => ({ kind, items: collections.map((c, i) => ({ ...c, image: covers[i], order: i })).filter(c => collectionKind(c) === kind).sort((a, b) => (a.rank ?? a.order) - (b.rank ?? b.order)) })).filter(group => group.items.length);
+    const html = `<div class="home-collections" tabindex="0" aria-label="Colecciones por tipo">${grouped.map(({ kind, items }) => `<section class="home-collection-group"><h3>${kinds[kind]}</h3><div class="home-collection-items">${items.map(c => {
+      const members = flights.filter(f => c.clip_ids.includes(f.clip_id));
+      const duration = Math.round(members.reduce((sum, f) => sum + (Number(f.duration_s) || 0), 0));
+      const durationText = fmt.duration(duration) + (duration >= 3600 && duration % 60 ? ` ${fmt.duration(duration % 60)}` : '');
+      return `<a class="home-collection" href="index.html?collection=${encodeURIComponent(c.id)}&v=list"><img src="${esc(c.image)}" alt="" loading="lazy"><h4>${esc(c.label)}</h4><p>${figure(fmt.number(c.count))} clips · ${figure(durationText)}</p></a>`;
+    }).join('')}</div></section>`).join('')}</div>`;
+    region.replaceChildren(collections.length ? suggestedContent(html) : Object.assign(document.createElement('p'), { className: 'w2-note', textContent: 'Las colecciones aparecerán cuando haya vuelos analizados.' }));
   } catch { region.innerHTML = '<p class="w2-note">No se pudieron cargar las colecciones. <button class="ui-button ui-button--quiet" id="collections-retry">Reintentar</button></p>'; region.querySelector('button').addEventListener('click', () => loadCollections(flights)); }
   finally { region.setAttribute('aria-busy', 'false'); }
 }
-function relativeTime(seconds) {
-  const minutes = Math.max(0, Math.floor((Date.now() / 1000 - seconds) / 60));
-  if (minutes < 1) return 'ahora';
-  if (minutes < 60) return `hace ${minutes} min`;
-  if (minutes < 1440) return `hace ${Math.floor(minutes / 60)} h`;
-  const days = Math.floor(minutes / 1440);
-  return days === 1 ? 'ayer' : `hace ${days} días`;
-}
 function recentEvents(jobs, flights) {
   const seen = new Set();
-  return jobs.filter(job => job.status === 'done' && Number.isFinite(job.finished) && job.finished > 0)
+  return jobs.filter(job => job.status === 'done' && Number.isFinite(job.finished) && job.finished > Date.now() / 1000 - 7 * 86400)
     .sort((a, b) => b.finished - a.finished).flatMap(job => {
       const flight = flights.find(f => f.clip_id === job.label);
       const title = job.title || flight?.label;
@@ -75,7 +80,7 @@ async function collectionCovers(collections, flights) {
   const owned = new Set(collections.filter(c => c.cover.selection === 'owner').map(c => imageKey(c.cover.frame_url)));
   for (const collection of collections) {
     let cover = collection.cover.frame_url;
-    if (used.has(imageKey(cover)) || (owned.has(imageKey(cover)) && collection.cover.selection !== 'owner')) {
+    if ((collection.cover.selection !== 'owner' && /persona|pareja|brazo|primer plano/i.test(collection.cover.caption_short || collection.caption_short || '')) || used.has(imageKey(cover)) || (owned.has(imageKey(cover)) && collection.cover.selection !== 'owner')) {
       const candidates = flights.filter(f => collection.clip_ids.includes(f.clip_id))
         .sort((a, b) => (b.ai?.travel_score || 0) - (a.ai?.travel_score || 0));
       let alternate;
@@ -84,7 +89,8 @@ async function collectionCovers(collections, flights) {
           insights.set(flight.clip_id, readAI(`/api/clip/${encodeURIComponent(flight.clip_id)}/insight`).catch(() => null));
         }
         const insight = (await insights.get(flight.clip_id))?.insight;
-        const times = [...(insight?.best_frame_times || []), ...(flight.ai?.highlights || []).map(h => h.t)];
+        if (/^(persona|pareja|brazo)/i.test(insight?.caption_short || '')) continue;
+        const times = [...(insight?.best_frame_times || []).filter(t => t > 0), ...(flight.ai?.highlights || []).map(h => h.t)];
         alternate = times.filter(t => Number.isFinite(t) && flight.frame_count > 0)
           .map(t => frameFor(flight, t)).find(url => !used.has(imageKey(url)) && !owned.has(imageKey(url)));
         if (alternate) break;
@@ -95,5 +101,35 @@ async function collectionCovers(collections, flights) {
     covers.push(cover);
   }
   return covers;
+}
+function collectionKind(c) {
+  if (['place', 'month', 'subject', 'shot_type'].includes(c.kind)) return c.kind;
+  if (/enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre/i.test(c.label)) return 'month';
+  if (/cenital|revelaci|mixt|órbita|paneo|ascenso|descenso|seguimiento|travelling|fpv/i.test(c.label)) return 'shot_type';
+  if (/bogotá|guatavita|la mesa|zona|lugar/i.test(c.label) || c.id?.startsWith('place:')) return 'place';
+  return 'subject';
+}
+async function loadRecent(rows) {
+  const region = document.getElementById('home-summary');
+  const [{ insights, failed }, collections] = await Promise.all([loadInsights(rows), getCollections().then(data => data.collections).catch(() => [])]);
+  const place = f => collections.find(c => collectionKind(c) === 'place' && c.clip_ids.includes(f.clip_id))?.label;
+  for (const f of rows) {
+    const entry = document.querySelector(`.home-recent-item[data-clip="${f.clip_id}"]`);
+    if (!entry) continue;
+    const short = insights[f.clip_id]?.caption_short;
+    entry.querySelector('strong').textContent = [place(f), f.label || short || 'Vuelo'].filter(Boolean).join(' · ');
+  }
+  const latest = rows[0], insight = insights[latest.clip_id];
+  document.querySelector('.home-feature h2').textContent = latest.label || place(latest) || fmt.date(latest.date);
+  document.querySelector('.home-date').textContent = `Último vuelo · ${fmt.date(latest.date)} · ${latest.time || ''}`;
+  region.replaceChildren();
+  if (insight?.caption_short) region.append(suggestedContent(captionView(insight)));
+  else if (failed) region.textContent = 'No se pudo cargar el resumen.';
+  region.setAttribute('aria-busy', 'false');
+  // One shared disclosure identifies the suggested recent-flight titles.
+  if (rows.slice(1).some(f => insights[f.clip_id]?.caption_short && !f.label)) {
+    const recent = document.getElementById('home-recent');
+    const wrap = suggestedContent(''); recent.before(wrap); wrap.querySelector('.ui-suggested-content').append(recent);
+  }
 }
 load();

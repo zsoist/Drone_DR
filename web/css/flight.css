@@ -20,12 +20,6 @@
 .fl-bar { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:var(--sp-2); padding:var(--sp-3); border-top:1px solid var(--line); }
 .fl .btn,.fl .seg button,.fl .chip,.w2-sheet .btn { min-height:44px; font-size:var(--fs-sm); }
 .fl .fl-bar .btn.primary { background:var(--surface-2); color:var(--text); border-color:var(--line); }
-.fl .seg button.on { color:var(--accent-fg); }
-.fl-timeline { display:flex; align-items:center; gap:var(--sp-2); padding:var(--sp-2) var(--sp-3); background:var(--surface-2); }
-.fl-timeline output { font-family:var(--mono); min-width:5ch; font-size:var(--fs-sm); }
-.fl-scrubber { flex:1; min-width:0; }
-.fl-scrubber input { width:100%; min-height:44px; }
-.fl-ticks { display:flex; justify-content:space-between; color:var(--text-2); font:var(--fs-xs) var(--mono); padding-bottom:var(--sp-2); }
 .fl .hud { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:var(--surface); padding:var(--sp-3); gap:var(--sp-4) var(--sp-2); }
 .fl .hud>div { padding:0; border:0; min-width:0; }
 .fl .hud .lb { font-size:var(--fs-xs); letter-spacing:0; text-transform:none; color:var(--text-2); margin-bottom:var(--sp-2); }
@@ -34,8 +28,6 @@
 .hud-arrow { display:inline-flex; vertical-align:middle; }
 .fl .hud-arrow .ic { width:16px; height:16px; }
 .fl-map #map { height:330px; }
-.fl-map .maplibregl-ctrl button { width:44px; height:44px; }
-.fl-map .maplibregl-ctrl-attrib { font-size:12px; }
 .fl-marker svg { overflow:visible; }
 .fl-marker .o { fill:var(--data); stroke:var(--on-media); stroke-width:1.6; }
 .fl-marker .i { fill:var(--bg); }
@@ -114,7 +106,6 @@
  .fl-map #map { height:260px; }
  .fl .hud { grid-template-columns:repeat(3,minmax(0,1fr)); }
  .fl-bar { padding:var(--sp-2); }
- .fl-bar .seg button { padding-inline:var(--sp-2); }
  .fl-dl-grid { grid-template-columns:1fr; }
  .fl .hl-item { flex-wrap:wrap; }
  .fl .hl-item p { min-width:180px; }
@@ -125,12 +116,8 @@
 .fl-summary dl { grid-template-columns:1fr 1fr; gap:var(--sp-4); }
 .fl-summary { grid-template-columns:280px 1fr; align-items:start; padding-block:var(--sp-4); }
 .fl-summary>div>.tc { padding-left:0; }
-.fl-map .maplibregl-ctrl.maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button { width:44px; height:44px; background-repeat:no-repeat; background-position:center; background-color:var(--on-media); border-radius:var(--r-sm); }
-.fl-map .maplibregl-ctrl-attrib.maplibregl-compact { min-height:44px; padding-right:44px; }
-.fl-map .maplibregl-ctrl-attrib a { display:inline-flex; align-items:center; min-height:44px; }
 @media(max-width:820px) { .fl-summary { grid-template-columns:1fr; gap:var(--sp-2); } }
 
-@media(max-width:820px) { .fl-actions #btn-arch { display:none; } }
 
 .fl-summary .w2-suggestion { display:grid; grid-template-columns:1fr auto; column-gap:var(--sp-4); }
 .fl-summary .w2-suggestion>.ui-chip { justify-self:start; align-self:center; }
@@ -160,3 +147,25 @@
 .fl-video:fullscreen { overflow:auto; background:var(--media-bg); }
 .fl-video:fullscreen video { max-height:calc(100dvh - 240px); }
 #fl-media-status { padding:var(--sp-3); }
+.fl>.ui-back { margin-bottom:var(--sp-3); }
+.fl-head { margin-block:var(--sp-3) var(--sp-5); }
+.fl-head .fl-title { min-width:0; }
+.fl-summary { grid-template-columns:1fr; margin:0; }
+.fl-summary dd { font-family:var(--font); }
+.fl-bar { justify-content:start; }
+.fl-bar .fl-actions { flex:1 1 100%; }
+.fl-quality { position:absolute; top:var(--sp-2); right:var(--sp-2); z-index:2; }
+.fl-quality select { min-height:44px; padding-inline:var(--sp-3); border:1px solid var(--line); border-radius:var(--r-sm); background:var(--surface); color:var(--text); font:16px var(--font); }
+.fl .fl-map #map { position:relative; width:100%; height:380px; }
+.fl .hud-arrow { color:var(--text-2); }
+.fl .fl-summary .tc { font-family:var(--font); }
+.fl .fl-summary .ui-suggested { min-width:0; }
+@media(max-width:820px) {
+ .fl-summary { order:2; width:100%; }
+ .fl-map,.fl-no-gps { order:3; }
+ .fl-tel { order:4; }
+ .fl-film { order:5; }
+ .fl .fl-map #map { height:300px; }
+ .fl-bar .fl-actions { width:auto; gap:var(--sp-1); }
+ .fl-title h1 { font-size:var(--fs-xl); }
+}
