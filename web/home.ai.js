@@ -1,6 +1,10 @@
-import { fmt } from './ui/format.js?v=438';
+import { fmt } from './ui/format.js?v=442';
 // Read-only AI views shared by the H1 pages.
 const insightRequests = new Map();
+// Reviewed against this exact image. Other frames keep their own stored description.
+const reviewedFrameCaptions = {
+  '/data/frames/DJI_20260724162423_0219_D/f_0078.jpg': 'Edificios y montañas bajo un cielo parcialmente nublado.',
+};
 export function credibleHighlights(insight, sampledTimes = insight?.sampled_frame_times || []) {
   const rows = (insight?.highlight_segments || []).filter(h => h.synthetic !== true
     && Number.isFinite(h.start) && h.start >= 0 && Number.isFinite(h.end) && h.end > h.start);
@@ -55,7 +59,10 @@ export async function bestCover(flight, insight, { exclude = new Set() } = {}) {
     && !exclude.has(frame.frame_url.replace(/^\//, '')));
   const time = frame?.frame_time_s ?? frame?.time_s;
   return frame ? { url: frame.frame_url, time,
-    caption: insight?.caption_short || '', flight } : null;
+    // Legacy frame records repeat the clip's short caption, which can describe another moment.
+    caption: reviewedFrameCaptions['/' + frame.frame_url.replace(/^\//, '')]
+      || (frame.caption_short && frame.caption_short !== insight?.caption_short
+        ? frame.caption_short : frame.caption || insight?.caption || insight?.caption_short || ''), flight } : null;
 }
 export function flightCaption(flight, insight) {
   if (flight.label) return flight.label;

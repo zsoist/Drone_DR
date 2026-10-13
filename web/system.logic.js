@@ -1,4 +1,14 @@
-import { fmt } from './ui/format.js?v=438';
+export function systemRelativeTime(value, now = Date.now()) {
+  const seconds = (Number(value) - Number(now)) / 1000;
+  if (!Number.isFinite(seconds)) return 'sin fecha';
+  const magnitude = Math.abs(seconds);
+  const [unit, divisor] = magnitude < 60 ? ['s', 1] : magnitude < 3600 ? ['min', 60]
+    : magnitude < 86400 ? ['h', 3600] : magnitude < 2592000 ? ['d', 86400]
+      : magnitude < 31536000 ? ['mes', 2592000] : ['año', 31536000];
+  const count = Math.trunc(magnitude / divisor);
+  const label = count === 1 ? unit : unit === 'mes' ? 'meses' : unit === 'año' ? 'años' : unit;
+  return `${seconds > 0 ? 'en' : 'hace'} ${count} ${label}`;
+}
 
 export function jobState(job) {
   if (['cancelled', 'canceled'].includes(job.status)) return ['Cancelado', 'quiet'];
@@ -11,7 +21,7 @@ export function jobRelativeTime(job, now) {
   if (job.status === 'queued') return 'en cola';
   const timestamp = Number(job.status === 'running' ? job.started : job.finished || job.started);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return 'sin fecha';
-  return fmt.relative(timestamp * 1000, now).replace(/\b(\d+) m\b/g, (_, count) => `${count} ${count === '1' ? 'mes' : 'meses'}`);
+  return systemRelativeTime(timestamp * 1000, now);
 }
 
 // Keep each attempt available while collapsing repeated failures for the same source.

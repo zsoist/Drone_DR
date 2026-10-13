@@ -3,8 +3,8 @@
 .sh-defs { position:absolute; width:0; height:0; overflow:hidden; }
 .share-main { height:100dvh; background:#000; }
 .sh-head { isolation:isolate; position:absolute; top:0; left:0; right:0; z-index:3; display:flex; align-items:center; gap:var(--sp-4); padding:max(var(--sp-3),env(safe-area-inset-top)) var(--sp-5); pointer-events:none; }
-.sh-head > * { pointer-events:auto; }
-.sh-head::before { content:''; position:absolute; inset:0 0 -80px; z-index:-1; pointer-events:none; background:linear-gradient(to bottom,rgba(0,0,0,.9),rgba(0,0,0,.65) 45%,transparent); }
+.sh-head > * { position:relative; z-index:1; pointer-events:auto; }
+.share-page #sh-view::after { content:''; position:absolute; inset:0 0 auto; height:calc(168px + env(safe-area-inset-top)); z-index:2; pointer-events:none; background:linear-gradient(to bottom,oklch(0 0 0 / .92),oklch(0 0 0 / .72) 45%,oklch(0 0 0 / 0)); }
 .sh-head .ui-back,.sh-head .ui-button { color:var(--on-media); background:#000; }
 .sh-head-t { min-width:0; flex:1; }
 .sh-head h1 { font-size:var(--fs-lg); font-weight:600; line-height:var(--lh-tight); margin:0; text-wrap:balance; }

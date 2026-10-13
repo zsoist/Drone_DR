@@ -3,9 +3,9 @@
 // Dron still loads this file for its legacy capture panel. That page owns its uploader.
 (async () => {
 if (location.pathname.endsWith('/subir.html')) {
-  const { showToast } = await import('./ui/toast.js?v=438');
-  const { registerPaletteSource } = await import('./ui/palette.js?v=438');
-  const { fmt } = await import('./ui/format.js?v=438');
+  const { showToast } = await import('./ui/toast.js?v=442');
+  const { registerPaletteSource } = await import('./ui/palette.js?v=442');
+  const { fmt } = await import('./ui/format.js?v=442');
   await shell.ready;
   const main = renderShell('studio.html');
   main.classList.add('sb-page', 'ab-page');
@@ -23,13 +23,12 @@ if (location.pathname.endsWith('/subir.html')) {
     </section>
     <div class="sb-sidebar"><section class="sb-queue" aria-labelledby="sb-queue-title">
       <div class="sb-queue-head"><h2 id="sb-queue-title">Cola de subida</h2><span id="sb-count" role="status">Sin pendientes</span></div>
-      <div id="sb-list"><div class="sb-empty"><span class="sb-empty-icon" aria-hidden="true">${icon('plusFile')}</span><h3>La cola está vacía</h3><p>Al elegir archivos, verás aquí el avance de cada uno.</p></div></div>
+      <div id="sb-list"><p class="sb-empty">El avance de tus archivos aparecerá aquí.</p></div>
       <p class="sb-note" id="sb-transfer-note" hidden>Mantén esta página abierta hasta que termine la transferencia.</p>
-    </section>
-    <aside class="sb-history" aria-labelledby="sb-history-title"><div class="sb-queue-head"><h2 id="sb-history-title">Importaciones recientes</h2></div>
+    <aside class="sb-history" aria-labelledby="sb-history-title"><div class="sb-queue-head"><h2 id="sb-history-title">Subidas e importaciones recientes</h2></div>
       <div id="sb-history-list" aria-busy="true"><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div><div class="ui-skeleton ui-skeleton--text" aria-hidden="true"></div></div>
       <a class="ui-button ui-button--secondary" href="system.html">${icon('activity')} Ver todas en Sistema</a>
-    </aside></div>`;
+    </aside></section></div>`;
   async function loadHistory() {
     const list = main.querySelector('#sb-history-list');
     try {
@@ -37,19 +36,19 @@ if (location.pathname.endsWith('/subir.html')) {
       if (!response.ok) throw new Error('history');
       const data = await response.json();
       if (!Array.isArray(data.jobs)) throw new Error('history');
-      const jobs = data.jobs.filter(job => job.kind === 'ingest')
-        .sort((a,b) => b.started - a.started).slice(0,3);
+      const jobs = data.jobs.filter(job => ['upload', 'photo_upload', 'ingest'].includes(job.kind))
+        .sort((a,b) => Number(b.finished || b.started) - Number(a.finished || a.started)).slice(0,4);
       const states = {queued:'En cola', running:'En proceso', done:'Importado', error:'No se completó', cancelled:'Cancelado'};
       list.replaceChildren();
       for (const job of jobs) {
         const row = document.createElement('article'); row.className = 'sb-history-row';
         row.innerHTML = `<span class="sb-file-icon" aria-hidden="true">${icon('folder')}</span><div><h3></h3><p></p><span class="sb-history-state"></span></div>`;
-        row.querySelector('h3').textContent = job.title || 'Importación de archivos';
-        row.querySelector('p').textContent = fmt.date(job.started * 1000);
-        row.querySelector('.sb-history-state').textContent = states[job.status] || 'Consulta el estado en Sistema';
+        row.querySelector('h3').textContent = job.title || (job.kind === 'ingest' ? 'Importación de archivos' : 'Subida de archivos');
+        row.querySelector('p').textContent = fmt.date((job.finished || job.started) * 1000);
+        row.querySelector('.sb-history-state').textContent = job.status === 'done' && job.kind !== 'ingest' ? 'Recibido' : states[job.status] || 'Consulta el estado en Sistema';
         list.append(row);
       }
-      if (!jobs.length) list.innerHTML = '<p class="sb-history-empty">Aún no hay importaciones. Las próximas aparecerán aquí con su estado.</p>';
+      if (!jobs.length) list.innerHTML = '<p class="sb-history-empty">Aún no hay subidas ni importaciones. Las próximas aparecerán aquí con su estado.</p>';
     } catch {
       list.innerHTML = '<p class="sb-history-empty">No se pudo cargar el historial.</p><button class="ui-button ui-button--secondary" id="sb-history-retry">Reintentar</button>';
       list.querySelector('button').onclick = () => {list.setAttribute('aria-busy','true');loadHistory();};
@@ -198,7 +197,7 @@ if (!location.pathname.endsWith('/subir.html')) (function () {
   }
 
   async function openFull() {
-    const { createSheet } = await import('./ui/sheet.js?v=438');
+    const { createSheet } = await import('./ui/sheet.js?v=442');
     const ov = document.createElement('div');
     ov.className = 'modal-ov';
     ov.innerHTML = `<div class="modal sb-modal">
