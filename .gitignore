@@ -23,3 +23,6 @@ roofer.log.json
 
 # preview server PID of a redesign worktree (docs/REDESIGN_2026_10.md)
 .preview.pid
+
+# local Python environment on machines other than the Mac Mini
+.venv/

@@ -1,0 +1,12 @@
+# Python packages for the AeroBrain pipeline, server tests and gates (Python 3.14).
+# On the Mac Mini the venv is /Volumes/SSD/_system/venv. On another machine:
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# GPU training (torch, gsplat, nerfstudio) runs only on the PC; see docs/RUNBOOKS.md.
+numpy==2.5.3
+scipy==1.18.1
+trimesh==5.1.0
+pillow==12.3.0
+# imported inside functions (buildings, glb_gate, buildings/shell.py)
+shapely==2.1.2
+scikit-image==0.26.0
+laspy==2.7.0

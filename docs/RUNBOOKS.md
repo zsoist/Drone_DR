@@ -248,3 +248,47 @@ python3 pipeline/bump_web_version.py 345    # explicit N
 
 If you skip this step, the browser and the edge mix old and new modules (Safari incident 2026-07-12).
 `safe_restart.sh` also regenerates sidecars (`gzip_assets.sh`), but it does not bump `?v=`.
+
+## Deploy from another machine
+
+Use this procedure when you work on a laptop and the Mac Mini is at home. Production runs on the Mac Mini. A push to GitHub does not deploy.
+
+### Get SSH access (one time on the laptop)
+
+The Mac Mini accepts SSH through Cloudflare Tunnel at `ssh.danielreyes.work`. Cloudflare Access protects this hostname, so the first connection opens a browser login.
+
+1. Install the client: `brew install cloudflared`.
+2. Add this block to `~/.ssh/config`:
+
+```
+Host macmini
+  HostName ssh.danielreyes.work
+  User daniel_serverm4
+  ProxyCommand cloudflared access ssh --hostname %h
+```
+
+3. Run `ssh macmini 'hostname'`. Complete the Cloudflare login in the browser. Then type the password of the Mac Mini user.
+4. Optional: to log in with a key, add the public key of the laptop to `~/.ssh/authorized_keys` on the Mac Mini.
+
+### Deploy
+
+CAUTION: Do not start these steps before the branch passes `run_all_tests.py` on the laptop. These steps change production at `vuelos.metislab.work`.
+
+1. On the laptop, push the branch: `git push origin codex/scene-ops-stability`.
+2. Run `ssh macmini`.
+3. Run `cd /Volumes/SSD/work/forge-projects/aerobrain`.
+4. Run `git status --short`. The output must be empty. If it is not empty, stop. Examine the changes before you continue.
+5. Run `git rev-parse --short HEAD`. Write down this commit. You need it to go back.
+6. Run `git pull --ff-only origin codex/scene-ops-stability`.
+7. If the change touches `web/`, run `/Volumes/SSD/_system/venv/bin/python3 pipeline/bump_web_version.py`.
+8. If the change touches Python in `pipeline/` or `ai/`, run `bash pipeline/safe_restart.sh web`. Then run `bash pipeline/safe_restart.sh worker`.
+9. Run `/Volumes/SSD/_system/venv/bin/python3 pipeline/page_load_gate.py`. Then run it again with `--viewport phone`. Both must print `"ok": true`.
+10. If step 7 changed files, commit them with the message `Bump web asset versions`.
+11. Run `git push origin codex/scene-ops-stability` and `git push origin codex/scene-ops-stability:main`.
+
+If step 9 fails, run `git reset --hard <commit from step 5>` on the Mac Mini. Then do steps 8 and 9 again. The web serves the files from disk, so this restores the previous version.
+
+### Check production from anywhere
+
+- Run `curl -s -o /dev/null -w '%{http_code}\n' https://vuelos.metislab.work/login.html`. The result must be `200`.
+- Run `ssh macmini 'launchctl list | grep -E "aerobrain|metislab"'`. The worker and the web must show a PID.

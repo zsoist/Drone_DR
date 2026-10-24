@@ -188,7 +188,7 @@ STARTUP_DEADLINE_S = 12
 SSD_TMP = Path(os.environ.get("AEROBRAIN_BROWSER_TMP", "/Volumes/SSD/tmp/agents/aerobrain"))
 MIN_FREE_MEM_PCT = 30
 MIN_FREE_DISK_GB = 15
-RESOURCE_WAIT_S = 600
+RESOURCE_WAIT_S = int(os.environ.get("AEROBRAIN_BROWSER_WAIT_S", "600"))   # tests use 30 s (run_all_tests.py)
 _LOCK = {"fd": None, "depth": 0}
 
 

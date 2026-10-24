@@ -166,17 +166,29 @@ fallback if WebGL or the model fails. It pauses the animation when the canvas is
 The renderer limits the navigation effect to one canvas with a budget per viewport. With partial data, it
 shows `Sin datos`. It never turns a failed request into an invented zero.
 
+## Develop on another machine
+
+The repo works on any Mac with Python 3.14 and Node. You get the code, the docs and the full test suite, but no live data.
+See "Machines and setup" in [CLAUDE.md](CLAUDE.md) for the setup commands. See "Deploy from another machine" in [docs/RUNBOOKS.md](docs/RUNBOOKS.md) to deploy through the Mac Mini.
+
+## Agents and LLMs
+
+`CLAUDE.md` is the one instruction file for every agent and LLM (Claude Code, Codex, Gemini CLI, Cursor, Copilot) and for humans.
+`AGENTS.md` and `GEMINI.md` are symlinks to it. The docs use ASD-STE100 Simplified Technical English, so that people and models read them the same way.
+
 ## Documentation
 
 The index [docs/README.md](docs/README.md) classifies each document as a current contract, measured
 evidence, a runbook or a historical snapshot. Read these documents first:
 
+- `CLAUDE.md` for the rules, the machines and the pitfalls
 - `SPEC.md` for the product
 - `docs/ARCHITECTURE.md` for the architecture of the system now
 - `docs/RUNBOOKS.md` for procedures
 - `docs/SPLAT_PIPELINE.md` for the trainer
 - `docs/MULTISOURCE_3D.md` for cumulative scenes
 - `pipeline/README.md` for the script map
+- `docs/REDESIGN_2026_10.md`, `docs/DESIGN_SYSTEM.md` and `docs/AI_FEATURES.md` for the UI and the visual AI
 
 ## Roadmap
 

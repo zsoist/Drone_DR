@@ -1,7 +1,8 @@
 # AeroBrain
 
-This file is the single source of truth for agents that write code (Claude Code and Codex).
-`AGENTS.md` is a symlink to this file. It lists the daily-driver pitfalls.
+This file is the single source of truth for all agents and LLMs that work on this repo, and for humans.
+`AGENTS.md` (Codex, Cursor, Copilot and other tools) and `GEMINI.md` (Gemini CLI) are symlinks to this file.
+Edit only `CLAUDE.md`. It lists the rules, the machines, the daily-driver pitfalls and the checks.
 
 For the current system, read `docs/ARCHITECTURE.md`. For procedures, read `docs/RUNBOOKS.md`. For the script map, read `pipeline/README.md`.
 For the legacy Mac trainer (`OpenSplat`, `MPS`, `xcodebuild`), read `docs/archive/LEGACY_MAC_TRAINER.md`.
@@ -10,8 +11,34 @@ For the legacy Mac trainer (`OpenSplat`, `MPS`, `xcodebuild`), read `docs/archiv
 
 - English docs use STE. To check a file, run `python3 pipeline/ste_lint.py <file>` (style guide: `docs/STE_STYLE_GUIDE.md`).
 - Read the pitfalls in this file before you change code.
-- Use `/Volumes/SSD/_system/venv/bin/python3`. The system `python3` does not have `scipy` and `trimesh`, so some tests fail falsely.
-- Put scratch files and screenshots in `/Volumes/SSD/tmp/agents/aerobrain`. Put QA captures that you keep in `/Volumes/SSD/archive/`. Do not write them to `/private/tmp`, `~` or `~/Downloads`.
+- On the Mac Mini, use `/Volumes/SSD/_system/venv/bin/python3`. On another machine, use the `.venv` of the repo (see "Machines and setup"). The system `python3` does not have `scipy` and `trimesh`, so some tests fail falsely.
+- On the Mac Mini, put scratch files and screenshots in `/Volumes/SSD/tmp/agents/aerobrain`. Put QA captures that you keep in `/Volumes/SSD/archive/`. Do not write them to `/private/tmp`, `~` or `~/Downloads`.
+- The UI text is Spanish. Code, commits and docs are English.
+- Before you say that a change works, run the checks. Then read the output.
+- Never commit secrets (`.env*` stays in `.gitignore`).
+
+## Machines and setup
+
+| Machine | Role | What you can do |
+|---|---|---|
+| Mac Mini M4 (home) | Production. It serves `web/` from disk on `:8790` through Cloudflare Tunnel. It runs the worker and keeps the data in `/Volumes/SSD/drone-vault`. | Everything: code, tests, browser gates, deploy |
+| PC with RTX 4060 Ti (home LAN) | GPU lane for ODM and splat training (`ssh pc`) | Only through the Mac Mini |
+| Another machine (laptop) | Development | Code, docs and the full test suite. No live data, no browser gates against production, no deploy without SSH to the Mac Mini |
+
+Set up another machine. On 2026-10-24 a fresh clone with these steps passed 134/134 suites without data:
+
+```bash
+git clone git@github.com:zsoist/Drone_DR.git aerobrain && cd aerobrain
+git checkout codex/scene-ops-stability
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+(cd tools && npm ci)
+mkdir -p /tmp/aerobrain-empty-vault
+AEROBRAIN_VAULT=/tmp/aerobrain-empty-vault AEROBRAIN_NO_REMOTE=1 .venv/bin/python pipeline/run_all_tests.py
+```
+
+- Work on the branch `codex/scene-ops-stability`. `main` is production and must always be equal to it after a deploy.
+- To deploy from another machine, push the branch. Then do the steps in "Deploy from another machine" in `docs/RUNBOOKS.md`.
+- The global rules of the owner are not in this repo. The rules in this file are enough to work on AeroBrain.
 
 ## Browser gates and Mac memory
 

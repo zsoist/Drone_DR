@@ -65,6 +65,7 @@ def _env() -> dict:
     env["PYTHONPATH"] = os.pathsep.join([str(ROOT), str(PIPELINE)])
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["AEROBRAIN_NO_REMOTE"] = "1"      # gpu_lane._wsl/_run fail fast instead of ssh to the PC
+    env.setdefault("AEROBRAIN_BROWSER_WAIT_S", "30")   # low disk/RAM: live browser tests skip fast, no 10 min wait
     return env
 
 
